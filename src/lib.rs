@@ -3,6 +3,8 @@
     Copyright © ClankPan 2024.
 */
 
+use rand::thread_rng;
+use rand::Rng;
 // use itertools::Itertools;
 // use rand::rngs::SmallRng;
 // use rand::seq::SliceRandom;
@@ -133,6 +135,746 @@ where
     sort_list_by_dist_v1(&mut visited);
 
     (k_anns, visited)
+}
+
+// pub fn search_with_analysis<P, G>(
+//     graph: &mut G,
+//     query_point: &P,
+//     k: usize,
+
+//     pq: &Vec<[u8; 4]>,
+//     pq_point_table: &[[P; 256]; 4],
+
+//     query_pq: &[u8; 4],
+
+//     pq_num_divs: &usize,
+// ) -> ((Vec<(f32, u32)>, Vec<(f32, u32)>), (usize, usize))
+// where
+//     P: PointInterface,
+//     G: GraphInterface<P>,
+// {
+//     // for analysis
+//     let mut get_count = 0;
+//     let mut waste_cout = 0;
+
+//     // k-anns, visited
+//     let builder_l = graph.size_l();
+//     let s = graph.start_id();
+//     let cemetery = graph.cemetery();
+//     assert!(builder_l >= k);
+
+//     let mut visited: Vec<(f32, u32)> = Vec::with_capacity(builder_l * 2);
+//     let mut touched = FxHashSet::default();
+//     touched.reserve(builder_l * 100);
+
+//     let mut list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+//     let (s_point, s_edges) = graph.get(&s);
+
+//     let mut getter = |id: &u32| -> (P, Vec<u32>) {
+//         // get_count += 1;
+//         graph.get(id)
+//     };
+
+//     list.push((query_point.distance(&s_point), s, true, s_edges));
+//     let mut working = Some(list[0].clone());
+//     visited.push((list[0].0, list[0].1));
+//     touched.insert(list[0].1);
+
+//     let query_pq: Vec<&P> = query_pq
+//         .into_iter()
+//         .zip(pq_point_table.iter())
+//         .map(|(index, table)| &table[*index as usize])
+//         .collect();
+
+//     while let Some((dist_of_working_and_query, working_node_i, _is_visited, working_node_out)) =
+//         working
+//     {
+
+//         let (working_node_point, _) = getter(&working_node_i); // wip todo: workingのSomeに入れる。
+
+//         // より近い最初の1/3しか使わないようにする。
+//         let mut nouts_candidates: Vec<(f32, u32, P, Vec<u32>)> = working_node_out
+//             .into_iter()
+//             .filter_map(|out_i| {
+//                 if !touched.contains(&out_i) {
+//                     touched.insert(out_i);
+
+//                     // get_count += 1;
+
+//                     let (out_point, out_edges) = getter(&out_i);
+
+//                     let dist_of_working_node_and_its_edge = out_point.distance(&working_node_point);
+
+//                     Some((dist_of_working_node_and_its_edge, out_i, out_point, out_edges))
+//                 } else {
+//                     None
+//                 }
+
+//             })
+//             .collect();
+//         nouts_candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less));
+//         let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = Vec::new();
+//         let mut captured = false;
+
+//         let nouts_candidates = nouts_candidates.into_iter();
+//         for (dist_of_working_node_and_its_edge, out_i, out_point, out_edges) in nouts_candidates {
+
+//             let dist_of_query_and_out_node = query_point.distance(&out_point);
+//             nouts.push((dist_of_query_and_out_node, out_i, false, out_edges));
+
+//             get_count += 1;
+
+//             if captured {
+//                 break
+//             }
+
+//             if dist_of_working_node_and_its_edge / 1.0 >= dist_of_query_and_out_node {
+//                 captured = true
+//             }
+
+//         }
+
+//         // println!("nouts len: {}", nouts.len());
+
+//         // nouts_candidates.truncate(nouts_candidates.len() / pq_num_divs);
+
+//         // let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = nouts_candidates
+//         //     .into_iter()
+//         //     .map(|(_, out_i)| {
+//         //         let (out_point, out_edges) = getter(&out_i);
+//         //         (query_point.distance(&out_point), out_i, false, out_edges)
+//         //     })
+//         //     .collect();
+
+
+//         sort_list_by_dist_v3(&mut nouts);
+
+//         let mut new_list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+//         let mut new_list_idx = 0;
+
+//         working = None;
+
+//         let mut list_iter = list.into_iter().peekable();
+//         let mut nouts_iter = nouts.into_iter().peekable();
+
+//         while new_list_idx < builder_l {
+//             let mut new_min = (match (list_iter.peek(), nouts_iter.peek()) {
+//                 (None, None) => break,
+//                 (Some(_), None) => list_iter.next(),
+//                 (None, Some(_)) => nouts_iter.next(),
+//                 (Some((l_min_dist, _, _, _)), Some((n_min_dist, _, _, _))) => {
+//                     if l_min_dist <= n_min_dist {
+//                         list_iter.next()
+//                     } else {
+//                         nouts_iter.next()
+//                     }
+//                 }
+//             })
+//             .unwrap();
+
+//             let is_not_visited = !new_min.2;
+
+//             // Finding Your Next Visit
+//             if working.is_none() && is_not_visited {
+//                 new_min.2 = true; // Mark as visited
+//                 visited.push((new_min.0, new_min.1));
+//                 working = Some(new_min.clone());
+//             }
+
+//             // Deleted and visited nodes are not added.
+//             // Even if it is deleted, its neighboring nodes are included in the search candidates.
+//             if !cemetery.contains(&new_min.1) || is_not_visited {
+//                 // Remove duplicate nodes
+//                 if new_list.last().map_or(true, |&(_, last_item_index, _, _)| {
+//                     let is_same = last_item_index == new_min.1;
+//                     if is_same {
+//                         waste_cout += 1;
+//                     }
+//                     !is_same
+//                 }) {
+//                     // Add this node to list
+//                     new_list.push(new_min);
+//                     new_list_idx += 1;
+//                 }
+//             }
+//         }
+
+//         waste_cout += nouts_iter.count();
+
+//         list = new_list;
+//     }
+
+//     let mut k_anns = list
+//         .into_iter()
+//         .map(|(dist, id, _, _)| (dist, id))
+//         .collect::<Vec<(f32, u32)>>();
+//     k_anns.truncate(k);
+
+//     sort_list_by_dist_v1(&mut visited);
+
+//     ((k_anns, visited), (get_count, waste_cout))
+// }
+
+
+pub fn search_with_analysis_v2<P>(
+    ann: &Vec<(P, Vec<u32>)>,
+    query_point: &P,
+    k: usize,
+    l: usize,
+    s: u32,
+    cemetery: Vec<u32>
+) -> ((Vec<(f32, u32)>, Vec<(f32, u32)>), (usize, usize))
+where
+    P: PointInterface,
+{
+    // for analysis
+    let mut get_count = 0;
+    let mut waste_cout = 0;
+
+    // k-anns, visited
+    let builder_l = l;
+    assert!(builder_l >= k);
+
+    let mut visited: Vec<(f32, u32)> = Vec::with_capacity(builder_l * 2);
+    let mut touched = FxHashSet::default();
+    touched.reserve(builder_l * 100);
+
+    let mut list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+    let (s_point, s_edges) = ann[s as usize].clone();
+
+    let mut getter = |id: &u32| -> (P, Vec<u32>) {
+        get_count += 1;
+        ann[*id as usize].clone()
+    };
+
+    list.push((query_point.distance(&s_point), s, true, s_edges));
+    let mut working = Some(list[0].clone());
+    visited.push((list[0].0, list[0].1));
+    touched.insert(list[0].1);
+
+    while let Some((_dist_of_working_and_query, _working_node_i, _is_visited, working_node_out)) =
+        working
+    {
+
+        // println!("working_node_i: {}", working_node_i);
+
+
+        let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = Vec::new();
+        for out_i in working_node_out {
+            if !touched.contains(&out_i) {
+                // touched.insert(out_i); // ここでtouchしてしまうと次に触られなくなる。
+                let (out_point, out_edges) = getter(&out_i);
+                nouts.push((query_point.distance(&out_point), out_i, false, out_edges))
+            }
+        }
+        sort_list_by_dist_v3(&mut nouts);
+        nouts.truncate(3);
+        nouts.iter().for_each(|(_, i, _, _)| { touched.insert(*i); });
+
+
+        let mut new_list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+        let mut new_list_idx = 0;
+
+        working = None;
+
+        let mut list_iter = list.into_iter().peekable();
+        let mut nouts_iter = nouts.into_iter().peekable();
+
+        while new_list_idx < builder_l {
+            let mut new_min = (match (list_iter.peek(), nouts_iter.peek()) {
+                (None, None) => break,
+                (Some(_), None) => list_iter.next(),
+                (None, Some(_)) => nouts_iter.next(),
+                (Some((l_min_dist, _, _, _)), Some((n_min_dist, _, _, _))) => {
+                    if l_min_dist <= n_min_dist {
+                        list_iter.next()
+                    } else {
+                        nouts_iter.next()
+                    }
+                }
+            })
+            .unwrap();
+
+            let is_not_visited = !new_min.2;
+
+            // Finding Your Next Visit
+            if working.is_none() && is_not_visited {
+                new_min.2 = true; // Mark as visited
+                visited.push((new_min.0, new_min.1));
+                working = Some(new_min.clone());
+            }
+
+            // Deleted and visited nodes are not added.
+            // Even if it is deleted, its neighboring nodes are included in the search candidates.
+            if !cemetery.contains(&new_min.1) || is_not_visited {
+                // Remove duplicate nodes
+                if new_list.last().map_or(true, |&(_, last_item_index, _, _)| {
+                    let is_same = last_item_index == new_min.1;
+                    if is_same {
+                        waste_cout += 1;
+                    }
+                    !is_same
+                }) {
+                    // Add this node to list
+                    new_list.push(new_min);
+                    new_list_idx += 1;
+                }
+            }
+        }
+
+        waste_cout += nouts_iter.count();
+
+        list = new_list;
+    }
+
+    let mut k_anns = list
+        .into_iter()
+        .map(|(dist, id, _, _)| (dist, id))
+        .collect::<Vec<(f32, u32)>>();
+    k_anns.truncate(k);
+
+    sort_list_by_dist_v1(&mut visited);
+
+    ((k_anns, visited), (get_count, waste_cout))
+}
+
+
+enum Tree<Point> {
+    Node(u8, Box<Tree<Point>>, Box<Tree<Point>>),
+    Leaf(Vec<(Point, u8)>),
+}
+
+struct TreeUtils<Point>
+where
+    Point: PointInterface,
+{
+    random_splitter_points: Vec<(Point, Point)>,
+    max_depth: usize,
+}
+
+impl<Point> TreeUtils<Point>
+where
+    Point: PointInterface,
+
+{
+    pub fn new(random_splitter_points: Vec<(Point, Point)>, max_depth: usize) -> Self {
+        Self {
+            random_splitter_points,
+            max_depth,
+        }
+    }
+
+    pub fn build(&self, points: Vec<Point>) -> Tree<Point> {
+        self.rec_build(points.iter().enumerate().map(|(i, p)| (p, i as u8)).collect(), self.max_depth)
+    }
+
+
+    fn rec_build(&self, points: Vec<(&Point, u8)>, depth: usize) -> Tree<Point> {
+
+        // if points.len() <= self.max_leaf_num_vectors {
+        if depth == 1 {
+            Tree::Leaf(points.into_iter().map(|(p, i)| (p.clone(), i)).collect())
+        } else {
+
+            let (splitter, left, right): (u8, Vec<(&Point, u8)>, Vec<(&Point, u8)>) = self.random_splitter_points.iter().enumerate().map(|(splitter_index, splitter)| {
+                let (left, right) = self.random_hyperplane_split(points.clone(), splitter);
+                let abs_diff = left.len().abs_diff(right.len());
+
+                (abs_diff, (splitter_index as u8, left, right))
+            }).min_by(|(diff_a, _), (diff_b, _)| diff_a.cmp(diff_b)).unwrap().1;
+            let left_node = self.rec_build(left, depth-1);
+            let right_node = self.rec_build(right, depth-1);
+
+            Tree::Node(splitter.clone(), Box::new(left_node), Box::new(right_node))
+        }                    
+    }
+
+    fn random_hyperplane_split<'a>(&self, points: Vec<(&'a Point, u8)>, splitter: &(Point, Point)) -> (Vec<(&'a Point, u8)>, Vec<(&'a Point, u8)>) {
+        let mut left = vec![];
+        let mut right = vec![];
+        points.into_iter().for_each(|p| {
+            let dist_l = p.0.distance(&splitter.0);
+            let dist_r = p.0.distance(&splitter.1);
+            if dist_l <= dist_r {
+                left.push(p)
+            } else {
+                right.push(p)
+            }
+        });
+
+        (left, right)
+    }
+
+    pub fn search_tree(&self, tree: Tree<Point>, query: &Point) -> Vec<(Point, u8)> {
+        match tree {
+            Tree::Node(splitter_index, left, right) => {
+                let splitter = &self.random_splitter_points[splitter_index as usize];
+                let dist_l = query.distance(&splitter.0);
+                let dist_r = query.distance(&splitter.1);
+
+                if dist_l <= dist_r {
+                    self.search_tree(*left, query)
+                } else {
+                    self.search_tree(*right, query)
+                }
+            },
+            Tree::Leaf(points) => points
+        }
+      }
+}
+
+pub fn search_with_analysis<P, G>(
+    graph: &mut G,
+    query_point: &P,
+    k: usize,
+    l: usize,
+) -> ((Vec<(f32, u32)>, Vec<(f32, u32)>), (usize, usize))
+where
+    P: PointInterface,
+    G: GraphInterface<P>,
+{
+    // for analysis
+    let mut get_count = 0;
+    let mut waste_cout = 0;
+
+    // k-anns, visited
+    let builder_l = l;
+    let s = graph.start_id();
+    let cemetery = graph.cemetery();
+    assert!(builder_l >= k);
+
+    let mut visited: Vec<(f32, u32)> = Vec::with_capacity(builder_l * 2);
+    let mut touched = FxHashSet::default();
+    touched.reserve(builder_l * 100);
+
+    let mut list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+    let (s_point, s_edges) = graph.get(&s);
+
+    let mut getter = |id: &u32| -> (P, Vec<u32>) {
+        get_count += 1;
+        graph.get(id)
+    };
+
+    list.push((query_point.distance(&s_point), s, true, s_edges));
+    let mut working = Some(list[0].clone());
+    visited.push((list[0].0, list[0].1));
+    touched.insert(list[0].1);
+
+    let mut rng = thread_rng();
+
+    let mut loop_count = 0;
+
+    while let Some((_dist_of_working_and_query, working_node_i, _is_visited, working_node_out)) =
+        working
+    {
+
+        // println!("working_node_i: {}", working_node_i);
+
+
+        let (working_point, _) = getter(&working_node_i);
+
+
+        let mut nout_candidates: Vec<(f32, u32, bool, Vec<u32>)> = Vec::new();
+        let working_node_nearest = working_node_out.into_iter().map(|out_i| {
+            let (out_point, out_edges) = getter(&out_i);
+
+            // if !touched.contains(&out_i) {
+            //     nout_candidates.push((query_point.distance(&out_point), out_i, false, out_edges));
+            // }
+
+            nout_candidates.push((query_point.distance(&out_point), out_i, false, out_edges));
+
+            (working_point.distance(&out_point), out_i)
+        }).min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less)).unwrap();
+
+        
+
+        sort_list_by_dist_v3(&mut nout_candidates);
+
+        // let mut nouts = nout_candidates;
+        // nouts.truncate(5);
+        // nouts.remove(rng.gen_range(0..nouts.len()));
+        // nouts.remove(rng.gen_range(0..nouts.len()));
+
+        let cut_len = 1;
+        let nouts = if nout_candidates.len() >= cut_len {
+            let mut nouts = nout_candidates[0..cut_len].to_vec();
+
+            if rng.gen_range(0..4) == 0 {
+                nouts.remove(0);
+            }
+    
+            let mut rest = nout_candidates[cut_len..].to_vec();
+            while rest.len() > 15 {
+                rest.remove(rng.gen_range(0..rest.len()));
+            }
+            nouts.extend(rest);
+
+
+            // if nouts.iter().find(|(_, out_i, _, _)| {
+            //     *out_i == working_node_nearest.1
+            // }).is_none() {
+            //     let (out_point, out_edges) = getter(&working_node_nearest.1);
+            //     nouts.push((query_point.distance(&out_point), working_node_nearest.1, false, out_edges));
+            //     sort_list_by_dist_v3(&mut nouts);
+            // }
+
+            nouts
+
+        } else {
+            nout_candidates
+        };
+
+
+        // 一度タッチしたやつをフィルターする。
+        let nouts: Vec<(f32, u32, bool, Vec<u32>)> = nouts.into_iter().filter(|(_, out_i, _, _)| !touched.contains(&out_i)).collect();
+        // それ以外をタッチする
+        nouts.iter().for_each(|(_, i, _, _)| { touched.insert(*i); });
+
+
+        let mut new_list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+        let mut new_list_idx = 0;
+
+        working = None;
+
+        let mut list_iter = list.into_iter().peekable();
+        let mut nouts_iter = nouts.into_iter().peekable();
+
+        while new_list_idx < builder_l {
+            let mut new_min = (match (list_iter.peek(), nouts_iter.peek()) {
+                (None, None) => break,
+                (Some(_), None) => list_iter.next(),
+                (None, Some(_)) => nouts_iter.next(),
+                (Some((l_min_dist, _, _, _)), Some((n_min_dist, _, _, _))) => {
+                    if l_min_dist <= n_min_dist {
+                        list_iter.next()
+                    } else {
+                        nouts_iter.next()
+                    }
+                }
+            })
+            .unwrap();
+
+            let is_not_visited = !new_min.2;
+
+            // Finding Your Next Visit
+            if working.is_none() && is_not_visited {
+                new_min.2 = true; // Mark as visited
+                visited.push((new_min.0, new_min.1));
+                working = Some(new_min.clone());
+            }
+
+            // Deleted and visited nodes are not added.
+            // Even if it is deleted, its neighboring nodes are included in the search candidates.
+            if !cemetery.contains(&new_min.1) || is_not_visited {
+                // Remove duplicate nodes
+                if new_list.last().map_or(true, |&(_, last_item_index, _, _)| {
+                    let is_same = last_item_index == new_min.1;
+                    if is_same {
+                        waste_cout += 1;
+                    }
+                    !is_same
+                }) {
+                    // Add this node to list
+                    new_list.push(new_min);
+                    new_list_idx += 1;
+                }
+            }
+        }
+
+        waste_cout += nouts_iter.count();
+
+        list = new_list;
+    }
+
+    let mut k_anns = list
+        .into_iter()
+        .map(|(dist, id, _, _)| (dist, id))
+        .collect::<Vec<(f32, u32)>>();
+    k_anns.truncate(k);
+
+    sort_list_by_dist_v1(&mut visited);
+
+    ((k_anns, visited), (get_count, waste_cout))
+}
+
+
+pub fn _search_with_analysis<P, G>(
+    graph: &mut G,
+    query_point: &P,
+    k: usize,
+
+    pq: &Vec<[u8; 4]>,
+    pq_point_table: &[[P; 256]; 4],
+
+    query_pq: &[u8; 4],
+
+    pq_num_divs: &usize,
+) -> ((Vec<(f32, u32)>, Vec<(f32, u32)>), (usize, usize))
+where
+    P: PointInterface,
+    G: GraphInterface<P>,
+{
+    // for analysis
+    let mut get_count = 0;
+    let mut waste_cout = 0;
+
+    // k-anns, visited
+    let builder_l = graph.size_l();
+    let s = graph.start_id();
+    let cemetery = graph.cemetery();
+    assert!(builder_l >= k);
+
+    let mut visited: Vec<(f32, u32)> = Vec::with_capacity(builder_l * 2);
+    let mut touched = FxHashSet::default();
+    touched.reserve(builder_l * 100);
+
+    let mut list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+    let (s_point, s_edges) = graph.get(&s);
+
+    let mut getter = |id: &u32| -> (P, Vec<u32>) {
+        // get_count += 1;
+        graph.get(id)
+    };
+
+    list.push((query_point.distance(&s_point), s, true, s_edges));
+    let mut working = Some(list[0].clone());
+    visited.push((list[0].0, list[0].1));
+    touched.insert(list[0].1);
+
+    let query_pq: Vec<&P> = query_pq
+        .into_iter()
+        .zip(pq_point_table.iter())
+        .map(|(index, table)| &table[*index as usize])
+        .collect();
+
+    while let Some((dist_of_working_and_query, working_node_i, _is_visited, working_node_out)) =
+        working
+    {
+
+        let (working_node_point, _) = getter(&working_node_i); // wip todo: workingのSomeに入れる。
+
+        // より近い最初の1/3しか使わないようにする。
+        let mut nouts_candidates: Vec<(f32, u32, P, Vec<u32>)> = working_node_out
+            .into_iter()
+            .filter_map(|out_i| {
+                if !touched.contains(&out_i) {
+                    touched.insert(out_i);
+
+                    // get_count += 1;
+
+                    let (out_point, out_edges) = getter(&out_i);
+
+                    let dist_of_working_node_and_its_edge = out_point.distance(&working_node_point);
+
+                    Some((dist_of_working_node_and_its_edge, out_i, out_point, out_edges))
+                } else {
+                    None
+                }
+
+            })
+            .collect();
+        nouts_candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less));
+        let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = Vec::new();
+        let mut captured = false;
+
+        let nouts_candidates = nouts_candidates.into_iter();
+        for (dist_of_working_node_and_its_edge, out_i, out_point, out_edges) in nouts_candidates {
+
+            let dist_of_query_and_out_node = query_point.distance(&out_point);
+            nouts.push((dist_of_query_and_out_node, out_i, false, out_edges));
+
+            get_count += 1;
+
+            if captured {
+                break
+            }
+
+            if dist_of_working_node_and_its_edge / 1.0 >= dist_of_query_and_out_node {
+                captured = true
+            }
+
+        }
+
+        // println!("nouts len: {}", nouts.len());
+
+        // nouts_candidates.truncate(nouts_candidates.len() / pq_num_divs);
+
+        // let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = nouts_candidates
+        //     .into_iter()
+        //     .map(|(_, out_i)| {
+        //         let (out_point, out_edges) = getter(&out_i);
+        //         (query_point.distance(&out_point), out_i, false, out_edges)
+        //     })
+        //     .collect();
+
+
+        sort_list_by_dist_v3(&mut nouts);
+
+        let mut new_list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+        let mut new_list_idx = 0;
+
+        working = None;
+
+        let mut list_iter = list.into_iter().peekable();
+        let mut nouts_iter = nouts.into_iter().peekable();
+
+        while new_list_idx < builder_l {
+            let mut new_min = (match (list_iter.peek(), nouts_iter.peek()) {
+                (None, None) => break,
+                (Some(_), None) => list_iter.next(),
+                (None, Some(_)) => nouts_iter.next(),
+                (Some((l_min_dist, _, _, _)), Some((n_min_dist, _, _, _))) => {
+                    if l_min_dist <= n_min_dist {
+                        list_iter.next()
+                    } else {
+                        nouts_iter.next()
+                    }
+                }
+            })
+            .unwrap();
+
+            let is_not_visited = !new_min.2;
+
+            // Finding Your Next Visit
+            if working.is_none() && is_not_visited {
+                new_min.2 = true; // Mark as visited
+                visited.push((new_min.0, new_min.1));
+                working = Some(new_min.clone());
+            }
+
+            // Deleted and visited nodes are not added.
+            // Even if it is deleted, its neighboring nodes are included in the search candidates.
+            if !cemetery.contains(&new_min.1) || is_not_visited {
+                // Remove duplicate nodes
+                if new_list.last().map_or(true, |&(_, last_item_index, _, _)| {
+                    let is_same = last_item_index == new_min.1;
+                    if is_same {
+                        waste_cout += 1;
+                    }
+                    !is_same
+                }) {
+                    // Add this node to list
+                    new_list.push(new_min);
+                    new_list_idx += 1;
+                }
+            }
+        }
+
+        waste_cout += nouts_iter.count();
+
+        list = new_list;
+    }
+
+    let mut k_anns = list
+        .into_iter()
+        .map(|(dist, id, _, _)| (dist, id))
+        .collect::<Vec<(f32, u32)>>();
+    k_anns.truncate(k);
+
+    sort_list_by_dist_v1(&mut visited);
+
+    ((k_anns, visited), (get_count, waste_cout))
 }
 
 /// Insert a new node into a Graph that implements the GraphInterface trait.

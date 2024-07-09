@@ -248,8 +248,7 @@ pub fn gorder<F1, F2>(
     window_size: usize,
     rng: &mut SmallRng,
 
-    #[cfg(feature = "progress-bar")]
-    pb: Option<ProgressBar>
+    #[cfg(feature = "progress-bar")] pb: Option<ProgressBar>,
 ) -> Vec<Vec<u32>>
 where
     F1: Fn(&u32) -> Vec<u32> + std::marker::Sync,

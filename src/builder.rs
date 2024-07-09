@@ -147,7 +147,7 @@ where
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &builder.progress {
             bar.set_length(points.len() as u64 * 3 + 1000); // 100 is for adding missing nodes process
-            // bar.set_message("");
+                                                            // bar.set_message("");
         }
 
         let _start_time = Instant::now();
@@ -165,7 +165,6 @@ where
     }
 
     pub fn random_graph_init(points: Vec<P>, builder: Builder, rng: &mut SmallRng) -> Self {
-
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &builder.progress {
             bar.set_message("random_graph_init");
@@ -233,7 +232,7 @@ where
             .collect();
 
         // println!("connecting nodes randomly");
-            
+
         // #[cfg(feature = "progress-bar")]
         // let progress = Some(ProgressBar::new(1000));
         // #[cfg(feature = "progress-bar")]
@@ -246,7 +245,6 @@ where
 
         let mut shuffle_ids: Vec<u32> = (0..points_len as u32).collect();
         shuffle_ids.shuffle(rng);
-
 
         // let used_index = AtomicUsize::new(0);
 
@@ -282,9 +280,8 @@ where
                     continue;
                 }
 
-
                 // let candidate_i = rng.gen_range(0..points_len as u32);
-                
+
                 // if node_i as u32 == candidate_i
                 //     || new_ids.contains(&candidate_i)
                 //     || *edges[candidate_i as usize].0.read() >= (builder.r + builder.r / 2) as u32
@@ -294,7 +291,6 @@ where
                 //     *edges[candidate_i as usize].0.write() += 1;
                 //     new_ids.push(candidate_i);
                 // }
-
             }
 
             let new_n_out: Vec<(f32, u32)> = new_ids
@@ -307,7 +303,6 @@ where
 
             *edges[node_i].1.write() = new_n_out;
 
-
             #[cfg(feature = "progress-bar")]
             if let Some((bar, done)) = &builder.progress {
                 let value = done.fetch_add(1, atomic::Ordering::Relaxed);
@@ -319,7 +314,6 @@ where
             // let mut n_out = edges[node_i].1.write();
             // *n_out = new_ids;
         });
-
 
         // (0..points_len).into_par_iter().for_each(|node_i| {
         //     let mut rng = SmallRng::seed_from_u64(builder.seed + node_i as u64);
@@ -475,7 +469,6 @@ where
         // // println!("missings, {:?}", missings);
 
         // missings
-            
     }
 
     fn get_backlinks(ann: &Vamana<P>) -> Vec<Vec<u32>> {
@@ -563,7 +556,6 @@ where
         //     bar.set_length((ann.nodes.len() * 2) as u64);
         //     bar.set_message("Build index (preparation)");
         // }
-
 
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &ann.builder.progress {
@@ -713,7 +705,6 @@ where
             }
         }
 
-
         // 辿り着けないノードのedgeを全てリセットする。
         // そのノードへの唯一のルートの中で、missingがあると、そのノードも間接的にmissingになる。
         let mut current_missing = Vamana::<P>::get_missings(&ann);
@@ -746,7 +737,6 @@ where
         // そのNNを交換したnodeで書き換える。
         // グラフは、missingsがなくても検索が成り立っているので、NNを入れ替えても問題ない。
         missings.into_par_iter().for_each(|missing_i| {
-
             let mut n_out = ann.nodes[missing_i as usize].n_out.write();
             let (nn_dist, nn_i) = n_out[0];
             let mut nn_n_out = ann.nodes[nn_i as usize].n_out.write();
@@ -760,7 +750,6 @@ where
             }
 
             insert_dist((nn_dist, missing_i), &mut nn_n_out);
-
         });
 
         /*
@@ -772,7 +761,6 @@ where
         let backlinks = Vamana::<P>::get_backlinks(&ann);
 
         ann.backlinks = backlinks;
-
 
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _)) = &mut ann.builder.progress {

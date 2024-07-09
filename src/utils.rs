@@ -54,6 +54,10 @@ pub fn sort_list_by_dist_v1(list: &mut Vec<(f32, u32)>) {
     list.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less));
 }
 
+pub fn sort_list_by_dist_v3(list: &mut Vec<(f32, u32, bool, Vec<u32>)>) {
+    list.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less));
+}
+
 pub fn is_contained_in(i: &u32, vec: &Vec<(f32, u32)>) -> bool {
     !vec.iter()
         .filter(|(_, id)| *id == *i)

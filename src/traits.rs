@@ -29,6 +29,8 @@ pub trait PointInterface: Clone + Sync + Send {
     /// ```
     fn distance(&self, other: &Self) -> f32;
 
+    fn similarity(&self, other: &Self) -> f32;
+
     /// The number of dimensions of a vector.
     fn dim() -> u32;
 

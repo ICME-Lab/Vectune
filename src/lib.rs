@@ -26,6 +26,7 @@ pub use crate::builder::*;
 pub use crate::gorder::gorder;
 pub use crate::traits::GraphInterface;
 pub use crate::traits::PointInterface;
+// pub use crate::traits::PointHelper;
 use crate::utils::*;
 
 /// Performs Greedy-Best-First-Search on a Graph that implements the GraphInterface trait.
@@ -439,12 +440,12 @@ where
 }
 
 
-enum Tree<Point> {
+pub enum Tree<Point> {
     Node(u8, Box<Tree<Point>>, Box<Tree<Point>>),
     Leaf(Vec<(Point, u8)>),
 }
 
-struct TreeUtils<Point>
+pub struct TreeUtils<Point>
 where
     Point: PointInterface,
 {
@@ -562,7 +563,7 @@ where
 
     let mut rng = thread_rng();
 
-    let mut loop_count = 0;
+    // let mut loop_count = 0;
 
     while let Some((_dist_of_working_and_query, working_node_i, _is_visited, working_node_out)) =
         working
@@ -575,7 +576,7 @@ where
 
 
         let mut nout_candidates: Vec<(f32, u32, bool, Vec<u32>)> = Vec::new();
-        let working_node_nearest = working_node_out.into_iter().map(|out_i| {
+        let _working_node_nearest = working_node_out.into_iter().map(|out_i| {
             let (out_point, out_edges) = getter(&out_i);
 
             // if !touched.contains(&out_i) {
@@ -704,12 +705,12 @@ pub fn _search_with_analysis<P, G>(
     query_point: &P,
     k: usize,
 
-    pq: &Vec<[u8; 4]>,
+    _pq: &Vec<[u8; 4]>,
     pq_point_table: &[[P; 256]; 4],
 
     query_pq: &[u8; 4],
 
-    pq_num_divs: &usize,
+    _pq_num_divs: &usize,
 ) -> ((Vec<(f32, u32)>, Vec<(f32, u32)>), (usize, usize))
 where
     P: PointInterface,
@@ -742,13 +743,13 @@ where
     visited.push((list[0].0, list[0].1));
     touched.insert(list[0].1);
 
-    let query_pq: Vec<&P> = query_pq
+    let _query_pq: Vec<&P> = query_pq
         .into_iter()
         .zip(pq_point_table.iter())
         .map(|(index, table)| &table[*index as usize])
         .collect();
 
-    while let Some((dist_of_working_and_query, working_node_i, _is_visited, working_node_out)) =
+    while let Some((_dist_of_working_and_query, working_node_i, _is_visited, working_node_out)) =
         working
     {
 

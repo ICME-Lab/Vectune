@@ -168,14 +168,14 @@ where
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct Point(Vec<f32>);
-impl Point {
-    fn to_f32_vec(&self) -> Vec<f32> {
-        self.0.iter().copied().collect()
-    }
-    fn from_f32_vec(a: Vec<f32>) -> Self {
-        Point(a.into_iter().collect())
-    }
-}
+// impl Point {
+//     fn to_f32_vec(&self) -> Vec<f32> {
+//         self.0.iter().copied().collect()
+//     }
+//     fn from_f32_vec(a: Vec<f32>) -> Self {
+//         Point(a.into_iter().collect())
+//     }
+// }
 
 impl VectunePoint for Point {
     // fn distance(&self, other: &Self) -> f32 {
@@ -245,5 +245,12 @@ impl VectunePoint for Point {
 
     fn zero() -> Self {
         Point::from_f32_vec(vec![0.0; Point::dim() as usize])
+    }
+
+    fn to_f32_vec(&self) -> Vec<f32> {
+        self.0.iter().copied().collect()
+    }
+    fn from_f32_vec(a: Vec<f32>) -> Self {
+        Point(a.into_iter().collect())
     }
 }

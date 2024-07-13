@@ -29,8 +29,6 @@ pub trait PointInterface: Clone + Sync + Send {
     /// ```
     fn distance(&self, other: &Self) -> f32;
 
-    fn similarity(&self, other: &Self) -> f32;
-
     /// The number of dimensions of a vector.
     fn dim() -> u32;
 
@@ -68,6 +66,9 @@ pub trait PointInterface: Clone + Sync + Send {
     fn div(&self, divisor: &usize) -> Self;
 
     fn zero() -> Self;
+
+    fn to_f32_vec(&self) -> Vec<f32>;
+    fn from_f32_vec(a: Vec<f32>) -> Self;
 }
 
 /// Traits that should be implemented for searching, inserting, and deleting after indexing.
@@ -163,3 +164,9 @@ pub trait GraphInterface<P> {
     fn start_id(&self) -> u32;
     fn overwirte_out_edges(&mut self, id: &u32, edges: Vec<u32>); // backlinkを処理する必要がある。
 }
+
+
+// pub trait PointHelper {
+//     fn to_f32_vec(&self) -> Vec<f32>;
+//     fn from_f32_vec(a: Vec<f32>) -> Self;
+// }

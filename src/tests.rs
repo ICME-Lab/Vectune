@@ -48,6 +48,14 @@ impl VPoint for Point {
     fn zero() -> Self {
         Point::from_f32_vec(vec![0.0; Point::dim() as usize])
     }
+
+    fn from_f32_vec(a: Vec<f32>) -> Self {
+        todo!()
+    }
+
+    fn to_f32_vec(&self) -> Vec<f32> {
+        todo!()
+    }
 }
 
 struct Graph<P>

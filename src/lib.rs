@@ -5,6 +5,7 @@
 
 use rand::thread_rng;
 use rand::Rng;
+use rand::seq::SliceRandom;
 // use itertools::Itertools;
 // use rand::rngs::SmallRng;
 // use rand::seq::SliceRandom;
@@ -371,6 +372,166 @@ where
         sort_list_by_dist_v3(&mut nouts);
         nouts.truncate(3);
         nouts.iter().for_each(|(_, i, _, _)| { touched.insert(*i); });
+
+
+        let mut new_list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+        let mut new_list_idx = 0;
+
+        working = None;
+
+        let mut list_iter = list.into_iter().peekable();
+        let mut nouts_iter = nouts.into_iter().peekable();
+
+        while new_list_idx < builder_l {
+            let mut new_min = (match (list_iter.peek(), nouts_iter.peek()) {
+                (None, None) => break,
+                (Some(_), None) => list_iter.next(),
+                (None, Some(_)) => nouts_iter.next(),
+                (Some((l_min_dist, _, _, _)), Some((n_min_dist, _, _, _))) => {
+                    if l_min_dist <= n_min_dist {
+                        list_iter.next()
+                    } else {
+                        nouts_iter.next()
+                    }
+                }
+            })
+            .unwrap();
+
+            let is_not_visited = !new_min.2;
+
+            // Finding Your Next Visit
+            if working.is_none() && is_not_visited {
+                new_min.2 = true; // Mark as visited
+                visited.push((new_min.0, new_min.1));
+                working = Some(new_min.clone());
+            }
+
+            // Deleted and visited nodes are not added.
+            // Even if it is deleted, its neighboring nodes are included in the search candidates.
+            if !cemetery.contains(&new_min.1) || is_not_visited {
+                // Remove duplicate nodes
+                if new_list.last().map_or(true, |&(_, last_item_index, _, _)| {
+                    let is_same = last_item_index == new_min.1;
+                    if is_same {
+                        waste_cout += 1;
+                    }
+                    !is_same
+                }) {
+                    // Add this node to list
+                    new_list.push(new_min);
+                    new_list_idx += 1;
+                }
+            }
+        }
+
+        waste_cout += nouts_iter.count();
+
+        list = new_list;
+    }
+
+    let mut k_anns = list
+        .into_iter()
+        .map(|(dist, id, _, _)| (dist, id))
+        .collect::<Vec<(f32, u32)>>();
+    k_anns.truncate(k);
+
+    sort_list_by_dist_v1(&mut visited);
+
+    ((k_anns, visited), (get_count, waste_cout))
+}
+
+
+pub fn search_with_optimal_stopping<P, G>(
+    graph: &mut G, query_point: &P, k: usize
+) -> ((Vec<(f32, u32)>, Vec<(f32, u32)>), (usize, usize))
+where
+    P: PointInterface,
+    G: GraphInterface<P>
+{
+
+    let mut rng = thread_rng();
+
+    // for analysis
+    let mut get_count = 0;
+    let mut waste_cout = 0;
+
+    // k-anns, visited
+    let builder_l = graph.size_l();
+    assert!(builder_l >= k);
+    let cemetery = graph.cemetery();
+
+    let mut visited: Vec<(f32, u32)> = Vec::with_capacity(builder_l * 2);
+    let mut touched = FxHashSet::default();
+    touched.reserve(builder_l * 100);
+
+    let mut list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);
+    let s = graph.start_id();
+    let (s_point, s_edges) = graph.get(&s);
+    // let (s_point, s_edges) = ann[s as usize].clone();
+
+    let mut getter = |id: &u32| -> (P, Vec<u32>) {
+        get_count += 1;
+        // ann[*id as usize].clone()
+        graph.get(id)
+    };
+
+    list.push((query_point.distance(&s_point), s, true, s_edges));
+    let mut working = Some(list[0].clone());
+    visited.push((list[0].0, list[0].1));
+    touched.insert(list[0].1);
+
+    while let Some((_dist_of_working_and_query, _working_node_i, _is_visited, working_node_out)) =
+        working
+    {
+
+        let mut not_touched: Vec<_> = working_node_out.into_iter().filter(|out_i| !touched.contains(&out_i)).collect();
+        not_touched.shuffle(&mut rng);
+        // not_touched.iter().for_each(|i| { touched.insert(*i); });
+
+        let mut nouts = if not_touched.len() < 5 {
+            let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = vec![];
+            for out_i in not_touched{
+                let (out_point, out_edges) = getter(&out_i);
+                let dist = query_point.distance(&out_point);
+                nouts.push((dist, out_i, false, out_edges));
+                touched.insert(out_i);
+            }
+            nouts
+        } else {
+            // optimal stopping のkを決める n/e
+            let k = (not_touched.len() as f32 / 2.718) as usize;
+            // let k = (not_touched.len() as f32 / 1.5) as usize;
+            if k == 0 {
+                println!("k is 0, not_touched.len(): {}", not_touched.len())
+            }
+            // 最初のk個は全て入れる。
+            let mut nouts: Vec<(f32, u32, bool, Vec<u32>)> = not_touched[0..k].iter().map(|out_i| {
+                let (out_point, out_edges) = getter(out_i);
+                (query_point.distance(&out_point), *out_i, false, out_edges)
+            }).collect();
+            // k個のうち、最も評価の高いノードを候補とする。
+            let candidate_score = nouts.iter().min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Less)).unwrap().0;
+            // 候補よりも良い評価もつものが現れた段階で終了する。
+            let mut count = 0;
+            for out_i in not_touched[k..].into_iter() {
+                let (out_point, out_edges) = getter(&out_i);
+                let dist = query_point.distance(&out_point);
+                nouts.push((dist, *out_i, false, out_edges));
+                touched.insert(*out_i);
+
+                count += 1;
+                
+                if candidate_score > dist {
+                    break
+                }
+            }
+            for _ in k+count..not_touched.len() {
+                let _ = getter(&0);
+            }
+            nouts
+        };
+
+        sort_list_by_dist_v3(&mut nouts);
 
 
         let mut new_list: Vec<(f32, u32, bool, Vec<u32>)> = Vec::with_capacity(builder_l);

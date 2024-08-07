@@ -258,18 +258,21 @@ where
 
             let mut new_ids = Vec::with_capacity(builder.r);
             let mut shuffle_iter_count = rng.gen_range(0..(points_len * 5) as u32);
-            while new_ids.len() < builder.r {
+            while new_ids.len() < std::cmp::min(builder.r, points_len - 1) { // subtract node_i from points_len
                 // println!("new_ids len: {}", new_ids.len());
                 shuffle_iter_count += 1;
                 let candidate_i = shuffle_ids[(shuffle_iter_count as usize) % points_len];
 
                 if node_i as u32 == candidate_i || new_ids.contains(&candidate_i) {
+                    // println!("node_i as u32 == candidate_i || new_ids.contains(&candidate_i)");
+                    // println!("{}, {}", points_len, new_ids.len());
                     continue;
                 }
 
                 if let Some(mut n_in_count) = edges[candidate_i as usize].0.try_write() {
                     if *n_in_count >= (builder.r + builder.r / 3) as u32 {
                         // println!("d3: {}, {}", candidate_i, *n_in_count);
+                        // println!("*n_in_count >= (builder.r + builder.r / 3) as u32");
                         continue;
                     } else {
                         *n_in_count += 1;
@@ -277,6 +280,7 @@ where
                         shuffle_iter_count = rng.gen_range(0..points_len as u32);
                     }
                 } else {
+                    // println!("else");
                     continue;
                 }
 

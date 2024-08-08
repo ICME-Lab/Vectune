@@ -1,6 +1,5 @@
 use bit_vec::BitVec;
 use rustc_hash::FxHashSet;
-use std::time::Instant;
 
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
@@ -150,7 +149,7 @@ where
                                                             // bar.set_message("");
         }
 
-        let _start_time = Instant::now();
+        // let _start_time = Instant::now();
         let mut ann = Vamana::<P>::random_graph_init(points, builder, &mut rng);
 
         // Prune Edges

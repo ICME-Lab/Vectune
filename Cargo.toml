@@ -12,7 +12,7 @@ readme = "README.md"
 
 [dependencies]
 itertools = "0.12.1"
-parking_lot = "0.12.1"
+parking_lot = {version = "0.11.1", features = ["wasm-bindgen"]} # 0.12にすると、wasm-bindgenのfeatがなくなってしまう。
 rand = { version = "0.8", features = ["small_rng"] }
 rayon = "1.10.0"
 rustc-hash = "1.1.0"
@@ -33,3 +33,4 @@ indicatif = "0.17"
 [features]
 wasm32-unkown-unknown = ["getrandom/custom"]
 progress-bar = ["indicatif"]
+wasm-bindgen = ["parking_lot/wasm-bindgen"]

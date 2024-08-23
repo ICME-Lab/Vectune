@@ -30,7 +30,7 @@ pub trait PointInterface: Clone + Sync + Send {
     fn distance(&self, other: &Self) -> f32;
 
     /// The number of dimensions of a vector.
-    fn dim() -> u32;
+    // fn dim() -> u32;
 
     /// Addition of two Points. Used by Builder to find the centroid.
     ///
@@ -65,7 +65,7 @@ pub trait PointInterface: Clone + Sync + Send {
     /// ```
     fn div(&self, divisor: &usize) -> Self;
 
-    fn zero() -> Self;
+    // fn zero() -> Self;
 
     fn to_f32_vec(&self) -> Vec<f32>;
     fn from_f32_vec(a: Vec<f32>) -> Self;

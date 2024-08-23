@@ -37,6 +37,18 @@ pub use crate::traits::PointInterface;
 // pub use crate::traits::PointHelper;
 use crate::utils::*;
 
+// pub fn insert() {
+
+// }
+
+// pub fn delete() {
+
+// }
+
+// pub fn suspend() {
+
+// }
+
 /// Performs Greedy-Best-First-Search on a Graph that implements the GraphInterface trait.
 ///
 /// Returns a tuple containing the list of k search results and the list of explored nodes.

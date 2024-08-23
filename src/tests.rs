@@ -23,9 +23,9 @@ impl VPoint for Point {
             .sum::<f32>()
             .sqrt()
     }
-    fn dim() -> u32 {
-        12
-    }
+    // fn dim() -> u32 {
+    //     12
+    // }
 
     fn add(&self, other: &Self) -> Self {
         Point::from_f32_vec(
@@ -45,9 +45,9 @@ impl VPoint for Point {
         )
     }
 
-    fn zero() -> Self {
-        Point::from_f32_vec(vec![0.0; Point::dim() as usize])
-    }
+    // fn zero() -> Self {
+    //     Point::from_f32_vec(vec![0.0; Point::dim() as usize])
+    // }
 
     fn from_f32_vec(a: Vec<f32>) -> Self {
         todo!()
@@ -166,11 +166,13 @@ fn test_parallel_gorder() {
 
     let mut i = 0;
 
+    const DIM: usize = 96;
+
     let points: Vec<Point> = (0..105)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
@@ -250,7 +252,7 @@ fn test_parallel_gorder() {
         centroid,
     };
 
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 10;
     // let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
     let (k_anns, _visited) = super::search(&mut graph, &xq, k);
@@ -280,11 +282,13 @@ fn fresh_disk_ann_new_centroid() {
 
     let mut i = 0;
 
+    const DIM: usize = 96;
+
     let points: Vec<Point> = (0..100)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
     let ann: Vamana<Point> = Vamana::random_graph_init(points, builder, &mut rng);
@@ -298,17 +302,18 @@ fn test_vamana_build() {
     let l = builder.get_l();
 
     let mut i = 0;
+    const DIM: usize = 96;
 
     let points: Vec<Point> = (0..1000)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
     let ann: Vamana<Point> = Vamana::new(points, builder);
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0;DIM as usize]);
     let k = 20;
     let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
 
@@ -326,12 +331,13 @@ fn search_api() {
     println!("seed: {}", builder.get_seed());
 
     let mut i = 0;
+    const DIM: usize = 96;
 
     let points: Vec<Point> = (0..500)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
@@ -345,7 +351,7 @@ fn search_api() {
     };
 
     // let ann: Vamana<Point> = Vamana::random_graph_init(points, builder, &mut rng);
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 10;
     // let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
     let (k_anns, _visited) = super::search(&mut graph, &xq, k);
@@ -363,12 +369,13 @@ fn test_greedy_search_with_cemetery() {
     println!("seed: {}", builder.get_seed());
 
     let mut i = 0;
+    const DIM: usize = 96;
 
     let points: Vec<Point> = (0..500)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
@@ -382,7 +389,7 @@ fn test_greedy_search_with_cemetery() {
     };
 
     // let ann: Vamana<Point> = Vamana::random_graph_init(points, builder, &mut rng);
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 10;
     // let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
     let (k_anns, _visited) = super::search(&mut graph, &xq, k);
@@ -417,12 +424,13 @@ fn test_greedy_search_with_removing_graves() {
     println!("seed: {}", builder.get_seed());
 
     let mut i = 0;
+    const DIM: usize = 96;
 
     let points: Vec<Point> = (0..100)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
@@ -461,7 +469,7 @@ fn test_greedy_search_with_removing_graves() {
     };
 
     // let ann: Vamana<Point> = Vamana::random_graph_init(points, builder, &mut rng);
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 10;
     // let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
     let (k_anns, _visited) = super::search(&mut graph, &xq, k);
@@ -502,12 +510,13 @@ fn test_insert_new_point() {
     println!("seed: {}", builder.get_seed());
 
     let mut i = 0;
+    const DIM: usize = 96;
 
     let points: Vec<Point> = (0..100)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
@@ -546,7 +555,7 @@ fn test_insert_new_point() {
     };
 
     // let ann: Vamana<Point> = Vamana::random_graph_init(points, builder, &mut rng);
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 10;
     // let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
     let (k_anns, _visited) = super::search(&mut graph, &xq, k);
@@ -609,17 +618,18 @@ fn greedy_search() {
     let l = builder.get_l();
 
     let mut i = 0;
+    const DIM: usize = 96;
 
     let points: Vec<Point> = (0..500)
         .map(|_| {
             let a = i;
             i += 1;
-            Point(vec![a; Point::dim() as usize])
+            Point(vec![a; DIM as usize])
         })
         .collect();
 
     let ann: Vamana<Point> = Vamana::random_graph_init(points, builder, &mut rng);
-    let xq = Point(vec![0; Point::dim() as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 10;
     let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
 

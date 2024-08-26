@@ -1147,15 +1147,33 @@ where
     ((k_anns, visited), (get_count, waste_cout))
 }
 
+pub enum InsertType<P>
+where
+    P: PointInterface,
+{
+    Id(u32),
+    Point(P)
+}
+
 /// Insert a new node into a Graph that implements the GraphInterface trait.
 ///
 /// Internally, use graph.alloc() to allocate space in storage or memory and reconnect the edges.
-pub fn insert<P, G>(graph: &mut G, new_p: P) -> u32
+pub fn insert<P, G>(graph: &mut G, data: InsertType<P>) -> u32
 where
     P: PointInterface,
     G: GraphInterface<P>,
 {
-    let new_id = graph.alloc(new_p.clone());
+
+    let (new_id, new_p) = match data {
+        InsertType::Id(new_id) => {
+            let (new_p, _) = graph.get(&new_id);
+            (new_id, new_p)
+        },
+        InsertType::Point(new_p) => {
+            let new_id = graph.alloc(new_p.clone());
+            (new_id, new_p)
+        },
+    };
     let r = graph.size_r();
     let a = graph.size_a();
 

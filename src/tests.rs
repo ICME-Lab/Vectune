@@ -596,7 +596,7 @@ fn test_insert_new_point() {
 
     let mut new_ids = vec![];
     for new_point in expected_p {
-        let new_id = super::insert(&mut graph, new_point);
+        let new_id = super::insert(&mut graph, InsertType::Point(new_point));
         new_ids.push(new_id)
     }
 

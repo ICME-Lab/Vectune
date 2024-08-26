@@ -127,9 +127,11 @@ where
     fn find_medoid(points: &Vec<P>) -> NodeIndex {
         let points_len = points.len();
 
+        let point_dim = points[0].to_f32_vec().len();
+
         let centroid = points
             .par_iter()
-            .fold(|| P::zero(), |acc, x| acc.add(x))
+            .fold(|| P::from_f32_vec(vec![0.0; point_dim]), |acc, x| acc.add(x))
             .reduce_with(|sum1, sum2| sum1.add(&sum2))
             .unwrap()
             .div(&points_len);

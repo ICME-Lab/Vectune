@@ -8,8 +8,8 @@ use rand::rngs::SmallRng;
 use rand::thread_rng;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
+// use rayon::iter::IntoParallelRefIterator;
+// use rayon::iter::ParallelIterator;
 // use rand::SeedableRng;
 // use itertools::Itertools;
 // use rand::rngs::SmallRng;
@@ -1164,6 +1164,8 @@ where
     G: GraphInterface<P>,
 {
 
+    // ic_cdk::println!("in vectne 1. :{}", ic_cdk::api::instruction_counter());
+
     let (new_id, new_p) = match data {
         InsertType::Id(new_id) => {
             let (new_p, _) = graph.get(&new_id);
@@ -1177,10 +1179,19 @@ where
     let r = graph.size_r();
     let a = graph.size_a();
 
+    // ic_cdk::println!("in vectne 2. :{}", ic_cdk::api::instruction_counter());
+
     // [L, V] ← GreedySearch(𝑠, 𝑝, 1, 𝐿)
     let (_list, mut visited) = search(graph, &new_p, 1);
+
+    // ic_cdk::println!("in vectne 3. :{}", ic_cdk::api::instruction_counter());
+
     // 𝑁out(𝑝) ← RobustPrune(𝑝, V, 𝛼, 𝑅) (Algorithm 3)
     let n_out = prune(|id| graph.get(id), &mut visited, &r, &a);
+
+    // ic_cdk::println!("in vectne 4. :{}", ic_cdk::api::instruction_counter());
+
+    graph.overwirte_out_edges(&new_id, n_out.clone());
 
     // foreach 𝑗 ∈ 𝑁out(𝑝) do
     for j in &n_out {
@@ -1201,6 +1212,8 @@ where
         }
         graph.overwirte_out_edges(j, j_n_out);
     }
+
+    // ic_cdk::println!("in vectne 5. :{}", ic_cdk::api::instruction_counter());
 
     new_id
 }

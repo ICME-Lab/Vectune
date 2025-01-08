@@ -22,7 +22,6 @@ use small_world::Constructor;
 // use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod builder;
-pub mod gorder;
 pub mod traits;
 pub mod utils;
 pub mod small_world;
@@ -31,7 +30,6 @@ pub mod small_world;
 mod tests;
 
 pub use crate::builder::*;
-pub use crate::gorder::gorder;
 pub use crate::traits::GraphInterface;
 pub use crate::traits::PointInterface;
 // pub use crate::traits::PointHelper;

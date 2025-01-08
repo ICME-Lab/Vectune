@@ -9,6 +9,9 @@ pub mod builder;
 pub mod traits;
 pub mod utils;
 pub mod small_world;
+pub mod storage;
+pub mod graph_store;
+pub mod graph;
 
 #[cfg(test)]
 mod tests;

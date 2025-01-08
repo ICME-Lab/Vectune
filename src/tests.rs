@@ -48,7 +48,7 @@ impl VPoint for Point {
     //     Point::from_f32_vec(vec![0.0; Point::dim() as usize])
     // }
 
-    fn from_f32_vec(a: Vec<f32>) -> Self {
+    fn from_f32_vec(_a: Vec<f32>) -> Self {
         todo!()
     }
 
@@ -131,7 +131,7 @@ where
     }
 }
 
-fn gen_backlinks(nodes: &Vec<(Point, Vec<u32>)>) -> Vec<Vec<u32>> {
+fn _gen_backlinks(nodes: &Vec<(Point, Vec<u32>)>) -> Vec<Vec<u32>> {
     let backlinks: Vec<Vec<u32>> = nodes
         .iter()
         .enumerate()

@@ -22,9 +22,6 @@ impl VPoint for Point {
             .sum::<f32>()
             .sqrt()
     }
-    // fn dim() -> u32 {
-    //     12
-    // }
 
     fn add(&self, other: &Self) -> Self {
         Point::from_f32_vec(
@@ -44,16 +41,13 @@ impl VPoint for Point {
         )
     }
 
-    // fn zero() -> Self {
-    //     Point::from_f32_vec(vec![0.0; Point::dim() as usize])
-    // }
-
-    fn from_f32_vec(_a: Vec<f32>) -> Self {
-        todo!()
+    fn from_f32_vec(a: Vec<f32>) -> Self {
+        let p: Vec<u32> = a.into_iter().map(|p| p as u32).collect();
+        Self(p)
     }
 
     fn to_f32_vec(&self) -> Vec<f32> {
-        todo!()
+        self.0.clone().into_iter().map(|p| p as f32).collect()
     }
 }
 

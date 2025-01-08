@@ -1,5 +1,4 @@
 use super::{GraphInterface as VGraph, PointInterface as VPoint, *};
-use bit_vec::BitVec;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;

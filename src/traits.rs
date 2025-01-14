@@ -165,7 +165,6 @@ pub trait GraphInterface<P> {
     fn overwirte_out_edges(&mut self, id: &u32, edges: Vec<u32>); // backlinkを処理する必要がある。
 }
 
-
 // pub trait PointHelper {
 //     fn to_f32_vec(&self) -> Vec<f32>;
 //     fn from_f32_vec(a: Vec<f32>) -> Self;

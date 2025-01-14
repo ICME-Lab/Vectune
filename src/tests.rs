@@ -149,7 +149,6 @@ fn _gen_backlinks(nodes: &Vec<(Point, Vec<u32>)>) -> Vec<Vec<u32>> {
     backlinks
 }
 
-
 #[test]
 fn fresh_disk_ann_new_empty() {
     let builder = Builder::default();
@@ -197,7 +196,7 @@ fn test_vamana_build() {
         .collect();
 
     let ann: Vamana<Point> = Vamana::new(points, builder);
-    let xq = Point(vec![0;DIM as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 20;
     let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
 

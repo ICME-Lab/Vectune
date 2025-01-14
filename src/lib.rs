@@ -6,21 +6,23 @@
 use rustc_hash::FxHashSet;
 
 pub mod builder;
-pub mod traits;
-pub mod utils;
+pub mod graph_store;
+pub mod incremental_graph;
 pub mod small_world;
 pub mod storage;
-pub mod graph_store;
-pub mod graph;
+pub mod traits;
+pub mod utils;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod test_incremenral_insert;
 
 pub use crate::builder::*;
 pub use crate::traits::GraphInterface;
 pub use crate::traits::PointInterface;
 use crate::utils::*;
-
 
 /// Performs Greedy-Best-First-Search on a Graph that implements the GraphInterface trait.
 ///
@@ -69,7 +71,6 @@ where
             }
         }
         sort_list_by_dist(&mut nouts);
-
 
         let mut new_list = Vec::with_capacity(builder_l);
         let mut new_list_idx = 0;
@@ -133,13 +134,12 @@ where
     (k_anns, visited)
 }
 
-
 pub enum InsertType<P>
 where
     P: PointInterface,
 {
     Id(u32),
-    Point(P)
+    Point(P),
 }
 
 /// Insert a new node into a Graph that implements the GraphInterface trait.
@@ -150,18 +150,17 @@ where
     P: PointInterface,
     G: GraphInterface<P>,
 {
-
     // ic_cdk::println!("in vectne 1. :{}", ic_cdk::api::instruction_counter());
 
     let (new_id, new_p) = match data {
         InsertType::Id(new_id) => {
             let (new_p, _) = graph.get(&new_id);
             (new_id, new_p)
-        },
+        }
         InsertType::Point(new_p) => {
             let new_id = graph.alloc(new_p.clone());
             (new_id, new_p)
-        },
+        }
     };
     let r = graph.size_r();
     let a = graph.size_a();

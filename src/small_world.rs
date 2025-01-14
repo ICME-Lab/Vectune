@@ -131,7 +131,10 @@ where
 
         let centroid = points
             .par_iter()
-            .fold(|| P::from_f32_vec(vec![0.0; point_dim]), |acc, x| acc.add(x))
+            .fold(
+                || P::from_f32_vec(vec![0.0; point_dim]),
+                |acc, x| acc.add(x),
+            )
             .reduce_with(|sum1, sum2| sum1.add(&sum2))
             .unwrap()
             .div(&points_len);
@@ -149,16 +152,17 @@ where
     pub fn prune_all(&mut self) {
         while let Some(target) = self.queue.pop_front() {
             let mut candidates = self.nodes[target as usize].edges.clone();
-            let ((_, mut visited), _, _) = self.greedy_search(&self.nodes[target as usize].point, 1, self.l);
+            let ((_, mut visited), _, _) =
+                self.greedy_search(&self.nodes[target as usize].point, 1, self.l);
             if visited[0].index == target {
                 visited.truncate(1)
             }
             candidates.extend(visited);
             candidates.sort_by(|a, b| a.index.cmp(&b.index));
             candidates.dedup_by(|a, b| a.index == b.index);
-            
+
             let (new_edges, _pruned, _dropped) = self.robust_prune(candidates);
-            
+
             let node = &mut self.nodes[target as usize];
             node.edges = new_edges;
         }

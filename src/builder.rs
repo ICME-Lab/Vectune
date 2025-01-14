@@ -183,7 +183,10 @@ where
         let point_dim = points[0].to_f32_vec().len();
         let sum = points
             .par_iter()
-            .fold(|| P::from_f32_vec(vec![0.0; point_dim]), |acc, x| acc.add(x))
+            .fold(
+                || P::from_f32_vec(vec![0.0; point_dim]),
+                |acc, x| acc.add(x),
+            )
             .reduce_with(|sum1, sum2| sum1.add(&sum2))
             .unwrap();
 
@@ -224,7 +227,8 @@ where
 
             let mut new_ids = Vec::with_capacity(builder.r);
             let mut shuffle_iter_count = rng.gen_range(0..(points_len * 5) as u32);
-            while new_ids.len() < std::cmp::min(builder.r, points_len - 1) { // subtract node_i from points_len
+            while new_ids.len() < std::cmp::min(builder.r, points_len - 1) {
+                // subtract node_i from points_len
                 shuffle_iter_count += 1;
                 let candidate_i = shuffle_ids[(shuffle_iter_count as usize) % points_len];
 
@@ -262,7 +266,6 @@ where
                     bar.set_position(value as u64);
                 }
             }
-
         });
 
         #[cfg(feature = "progress-bar")]
@@ -351,9 +354,7 @@ where
             .collect()
     }
 
-    
     pub fn indexing(ann: &mut Vamana<P>, rng: &mut SmallRng) {
-
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &ann.builder.progress {
             bar.set_message("visiting all nodes");

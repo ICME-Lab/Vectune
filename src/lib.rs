@@ -8,6 +8,7 @@ use rustc_hash::FxHashSet;
 pub mod builder;
 pub mod graph_store;
 pub mod incremental_graph;
+pub mod point;
 pub mod small_world;
 pub mod storage;
 pub mod traits;

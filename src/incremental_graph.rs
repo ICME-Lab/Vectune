@@ -21,7 +21,6 @@ pub trait IncrementalGraph<P: PointInterface, const R: usize, T: Rng> {
     fn add_edge(&mut self, node_index: &u32, new_edge_node_index: u32);
 }
 
-
 impl<T: PartialEq> Eq for Dist<T> {}
 
 impl<T: PartialOrd> Ord for Dist<T> {
@@ -60,7 +59,6 @@ where
     phantom1: std::marker::PhantomData<P>,
     phantom2: std::marker::PhantomData<T>,
 }
-
 
 impl<P, S, const R: usize, T> IncrementalGraph<P, R, T> for Graph<P, S, R, T>
 where
@@ -317,7 +315,6 @@ where
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::point::Point;
@@ -327,8 +324,8 @@ mod tests {
     use rand::rngs::SmallRng;
     use rand::SeedableRng;
     use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-    use std::collections::BTreeMap;
     use rustc_hash::FxHashSet;
+    use std::collections::BTreeMap;
 
     const R: usize = 90;
     const L: usize = 125;
@@ -341,7 +338,6 @@ mod tests {
         }
         vector.into_iter().map(|v| v / norm).collect()
     }
-
 
     struct TestStorage<P: PointInterface> {
         btree: BTreeMap<u32, Node<P, R>>,

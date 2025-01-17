@@ -30,9 +30,22 @@ impl<T: PartialOrd> Ord for Dist<T> {
 }
 
 #[derive(Clone)]
-pub struct Node<P: PointInterface, const R: usize> {
+pub struct ActiveNode<P: PointInterface, const R: usize> {
     point: P,
     edges: [u32; R],
+    rc: usize, // Referece counter
+}
+
+#[derive(Clone)]
+pub struct DeletedNode<const R: usize> {
+    edges: [u32; R],
+    rc: usize, // Referece counter
+}
+
+#[derive(Clone)]
+pub enum Node<P: PointInterface, const R: usize> {
+    Active(ActiveNode<P, R>),
+    Deleted(DeletedNode<R>),
 }
 
 pub trait Storage<P: PointInterface, const R: usize, T: Rng> {
@@ -48,7 +61,7 @@ pub trait Storage<P: PointInterface, const R: usize, T: Rng> {
 
     fn alloc(&mut self) -> u32;
 
-    fn random_index(&self, rng: &mut T) -> u32;
+    fn random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R>);
 }
 
 pub struct Graph<P: PointInterface, S: Storage<P, R, T>, const R: usize, T>
@@ -68,10 +81,11 @@ where
 {
     fn new(init_point: P) -> Self {
         let mut storage = S::new();
-        let init_node = Node {
+        let init_node = Node::Active(ActiveNode {
             point: init_point,
             edges: [0; R],
-        };
+            rc: 0,
+        });
         storage.set(0, init_node);
         Self {
             storage,
@@ -86,9 +100,7 @@ where
         let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
 
         // Set entry node and its edges
-        let entry_node_index = self.storage.random_index(rng);
-        debug!("node {entry_node_index}: entry");
-        let entry_node = self.storage.get(&entry_node_index).unwrap();
+        let (entry_node_index, entry_node) = self.storage.random_active_node(rng);
         list.push((Dist(entry_node.point.distance(query)), entry_node_index));
         touched_nodes.insert(entry_node_index);
 
@@ -142,24 +154,64 @@ where
                 break;
             };
 
-            // debug!("search: next node {next_visit_node}");
-
             // Get next node from the storage
-            let working_node = self.storage.get(&next_visit_node).expect("");
+            let Some(Node::Active(working_node)) = self.storage.get(&next_visit_node) else {
+                panic!("working node should be active")
+            };
 
             // Calculate distances between query point and the edge nodes of the current node
+            // let candidates: Vec<_> = working_node
+            //     .edges
+            //     .into_iter()
+            //     .filter_map(|edge_node_index| {
+            //         // If a distance of this edge node is already calculated, skip this node
+            //         if !touched_nodes.insert(edge_node_index) {
+            //             return None;
+            //         }
+
+            //         let edge_node = self.storage.get(&edge_node_index).expect("msg");
+
+            //         Some((Dist(edge_node.point.distance(query)), edge_node_index))
+            //     })
+            //     .sorted() // candidates should be order for merging to list
+            //     .collect();
             let candidates: Vec<_> = working_node
                 .edges
                 .into_iter()
                 .filter_map(|edge_node_index| {
+                    match self.storage.get(&edge_node_index) {
+                        Some(Node::Active(active_node)) => {
+                            Some(vec![(edge_node_index, active_node)])
+                        }
+                        // If the edge have been deleted, use its non-deleted edges istead.
+                        Some(Node::Deleted(deleted_node)) => Some(
+                            deleted_node
+                                .edges
+                                .into_iter()
+                                .filter_map(|deleted_node_edge_node_index| {
+                                    match self.storage.get(&deleted_node_edge_node_index) {
+                                        Some(Node::Active(active_node)) => {
+                                            Some((deleted_node_edge_node_index, active_node))
+                                        }
+                                        _ => None,
+                                    }
+                                })
+                                .collect(),
+                        ),
+                        None => None,
+                    }
+                })
+                .flatten()
+                .filter_map(|(edge_node_index, active_edge_node)| {
                     // If a distance of this edge node is already calculated, skip this node
                     if !touched_nodes.insert(edge_node_index) {
                         return None;
                     }
 
-                    let edge_node = self.storage.get(&edge_node_index).expect("msg");
-
-                    Some((Dist(edge_node.point.distance(query)), edge_node_index))
+                    Some((
+                        Dist(active_edge_node.point.distance(query)),
+                        edge_node_index,
+                    ))
                 })
                 .sorted() // candidates should be order for merging to list
                 .collect();
@@ -248,6 +300,20 @@ where
     }
 
     fn delete(&mut self, _index: u32, _a: f32) {
+        /*
+        方針:
+        vamanaのdelete algorithと同等の効果があるローカルノードの置き換えをオンデマンドで行う。
+        削除されたnode-pをedgeに持つnodeは、node-pのedgeを追加の候補としてits edgeに追加する。
+        これを検索時に行うことで、同等の効果が得られるはずだ。
+
+        vamanaの性能を保持したまま、検索時の計算コストの増加だけ済む。
+        さらに、このコストは逐次的にrobust-pruneをかけていく事で減らすことができるので、backlinksを保存することが難しい場合には向いている。
+        また、挿入の実装も小さくすることができる。
+
+        削除したノードのエッジのindexをとっておく必要がある。
+
+
+        */
         todo!()
     }
 
@@ -339,15 +405,15 @@ mod tests {
         vector.into_iter().map(|v| v / norm).collect()
     }
 
-    struct TestStorage<P: PointInterface> {
-        btree: BTreeMap<u32, Node<P, R>>,
+    struct TestStorage {
+        btree: BTreeMap<u32, Node<Point, R>>,
         index: u32,
     }
 
-    impl<P, T> Storage<P, R, T> for TestStorage<P>
-    where
-        P: PointInterface,
-        T: Rng,
+    impl Storage<Point, R, SmallRng> for TestStorage
+    // where
+    //     P: PointInterface,
+    //     T: Rng,
     {
         fn new() -> Self {
             Self {
@@ -356,11 +422,11 @@ mod tests {
             }
         }
 
-        fn get(&self, index: &u32) -> Option<Node<P, R>> {
+        fn get(&self, index: &u32) -> Option<Node<Point, R>> {
             self.btree.get(index).cloned()
         }
 
-        fn set(&mut self, index: u32, node: Node<P, R>) -> Option<Node<P, R>> {
+        fn set(&mut self, index: u32, node: Node<Point, R>) -> Option<Node<Point, R>> {
             self.btree.insert(index, node)
         }
 
@@ -377,14 +443,24 @@ mod tests {
             self.index
         }
 
-        fn random_index(&self, rng: &mut T) -> u32 {
+        fn random_active_node(&self, rng: &mut SmallRng) -> (u32, ActiveNode<Point, R>) {
             let keys: Vec<_> = self.btree.keys().collect();
 
-            let Some(&random_key) = keys.get(rng.gen_range(0..keys.len())) else {
-                panic!("btree is empty")
-            };
+            loop {
+                let Some(&random_key) = keys.get(rng.gen_range(0..keys.len())) else {
+                    panic!("btree is empty")
+                };
 
-            *random_key
+                let Some(Node::Active(active_node)) = self.get(random_key) else {
+                    continue;
+                };
+
+                return (*random_key, active_node);
+            }
+
+            // while let Some(Node::Active(active_node))
+
+            // *random_key
         }
     }
 
@@ -393,8 +469,7 @@ mod tests {
     #[test]
     fn test_get() {
         let mut rng: SmallRng = SmallRng::from_entropy();
-        let mut graph: Graph<Point, TestStorage<Point>, R, SmallRng> =
-            Graph::new(gen_point(&mut rng));
+        let mut graph: Graph<Point, TestStorage, R, SmallRng> = Graph::new(gen_point(&mut rng));
 
         env_logger::init();
 

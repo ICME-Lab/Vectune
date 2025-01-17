@@ -10,17 +10,6 @@ pub use crate::traits::PointInterface;
 #[derive(PartialEq, PartialOrd, Clone, Copy, Debug)]
 pub struct Dist<T>(pub T);
 
-pub trait IncrementalGraph<P: PointInterface, const R: usize, T: Rng> {
-    fn new(init_point: P) -> Self;
-    fn search(&self, point: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)>;
-    fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> u32;
-    fn delete(&mut self, index: u32, a: f32);
-    fn prune(&mut self, candidates: Vec<(Dist<f32>, u32)>, a: f32) -> [u32; R];
-    fn remove(&mut self, index: u32, a: f32);
-    fn remove_list(&self) -> Vec<u32>;
-    fn add_edge(&mut self, node_index: &u32, new_edge_node_index: u32);
-}
-
 impl<T: PartialEq> Eq for Dist<T> {}
 
 impl<T: PartialOrd> Ord for Dist<T> {
@@ -48,6 +37,19 @@ pub enum Node<P: PointInterface, const R: usize> {
     Deleted(DeletedNode<R>),
 }
 
+impl<P, const R: usize> Node<P, R>
+where
+    P: PointInterface,
+{
+    pub fn new(point: P, edges: [u32; R]) -> Self {
+        Self::Active(ActiveNode {
+            point,
+            edges,
+            rc: 0,
+        })
+    }
+}
+
 pub trait Storage<P: PointInterface, const R: usize, T: Rng> {
     fn new() -> Self;
 
@@ -73,13 +75,13 @@ where
     phantom2: std::marker::PhantomData<T>,
 }
 
-impl<P, S, const R: usize, T> IncrementalGraph<P, R, T> for Graph<P, S, R, T>
+impl<P, S, const R: usize, T> Graph<P, S, R, T>
 where
     P: PointInterface,
     S: Storage<P, R, T>,
     T: Rng,
 {
-    fn new(init_point: P) -> Self {
+    pub fn new(init_point: P) -> Self {
         let mut storage = S::new();
         let init_node = Node::Active(ActiveNode {
             point: init_point,
@@ -94,7 +96,7 @@ where
         }
     }
 
-    fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
+    pub fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
         let mut list: Vec<(Dist<f32>, u32)> = vec![]; // This list has working nodes that is visited or candidate for next searching.
         let mut visited_nodes = FxHashSet::default();
         let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
@@ -159,59 +161,25 @@ where
                 panic!("working node should be active")
             };
 
-            // Calculate distances between query point and the edge nodes of the current node
-            // let candidates: Vec<_> = working_node
-            //     .edges
-            //     .into_iter()
-            //     .filter_map(|edge_node_index| {
-            //         // If a distance of this edge node is already calculated, skip this node
-            //         if !touched_nodes.insert(edge_node_index) {
-            //             return None;
-            //         }
-
-            //         let edge_node = self.storage.get(&edge_node_index).expect("msg");
-
-            //         Some((Dist(edge_node.point.distance(query)), edge_node_index))
-            //     })
-            //     .sorted() // candidates should be order for merging to list
-            //     .collect();
             let candidates: Vec<_> = working_node
                 .edges
                 .into_iter()
-                .filter_map(|edge_node_index| {
-                    match self.storage.get(&edge_node_index) {
-                        Some(Node::Active(active_node)) => {
-                            Some(vec![(edge_node_index, active_node)])
-                        }
-                        // If the edge have been deleted, use its non-deleted edges istead.
-                        Some(Node::Deleted(deleted_node)) => Some(
-                            deleted_node
-                                .edges
-                                .into_iter()
-                                .filter_map(|deleted_node_edge_node_index| {
-                                    match self.storage.get(&deleted_node_edge_node_index) {
-                                        Some(Node::Active(active_node)) => {
-                                            Some((deleted_node_edge_node_index, active_node))
-                                        }
-                                        _ => None,
-                                    }
-                                })
-                                .collect(),
-                        ),
-                        None => None,
-                    }
+                .flat_map(|edge_node_index| {
+                    // ActiveNode のみ抽出し、(edge_node_index, ActiveNode) の Vec を返す
+                    self.collect_active_edges(edge_node_index)
                 })
-                .flatten()
                 .filter_map(|(edge_node_index, active_edge_node)| {
                     // If a distance of this edge node is already calculated, skip this node
                     if !touched_nodes.insert(edge_node_index) {
                         return None;
                     }
-
-                    Some((
+                    Some((edge_node_index, active_edge_node))
+                })
+                .map(|(edge_node_index, active_edge_node)| {
+                    (
                         Dist(active_edge_node.point.distance(query)),
                         edge_node_index,
-                    ))
+                    )
                 })
                 .sorted() // candidates should be order for merging to list
                 .collect();
@@ -223,7 +191,7 @@ where
         list
     }
 
-    fn prune(&mut self, mut candidates: Vec<(Dist<f32>, u32)>, a: f32) -> [u32; R] {
+    pub fn prune(&mut self, mut candidates: Vec<(Dist<f32>, u32)>, a: f32) -> [u32; R] {
         let mut new_edge_nodes = [0; R]; // or u32::MAX
 
         if candidates.len() <= R {
@@ -243,8 +211,12 @@ where
 
                 // if α · d(p*, p') <= d(p, p') then remove p' from v
                 candidates.retain(|&(dist_xp_pd, pd)| {
-                    let pa_node = self.storage.get(&pa).expect("msg");
-                    let pd_node = self.storage.get(&pd).expect("msg");
+                    let Some(Node::Active(pa_node)) = self.storage.get(&pa) else {
+                        panic!("")
+                    };
+                    let Some(Node::Active(pd_node)) = self.storage.get(&pd) else {
+                        panic!("")
+                    };
                     let dist_pa_pd = pa_node.point.distance(&pd_node.point);
 
                     a * dist_pa_pd > dist_xp_pd.0
@@ -260,13 +232,13 @@ where
         new_edge_nodes
     }
 
-    fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> u32 {
+    pub fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> u32 {
         // Search the new point and use route nodes as candidates of its edges
         let candidates = self.search(&point, l, rng);
-        let edges = <Self as IncrementalGraph<P, R, T>>::prune(self, candidates, a);
+        let edges = Self::prune(self, candidates, a);
 
         // Add new node to the storage
-        let new_node = Node { point, edges };
+        let new_node = Node::new(point, edges);
         let new_node_index = self.storage.alloc();
         self.storage.set(new_node_index, new_node);
 
@@ -282,24 +254,12 @@ where
             self.add_edge(&edge_node_index, new_node_index);
         }
 
-        debug!(
-            "node 0: {:?}",
-            self.storage
-                .get(&0)
-                .unwrap()
-                .edges
-                .to_vec()
-                .into_iter()
-                .filter(|i| *i != 0)
-                .collect::<Vec<_>>()
-        );
-
         debug!("\n");
 
         new_node_index
     }
 
-    fn delete(&mut self, _index: u32, _a: f32) {
+    pub fn delete(&mut self, _index: u32, _a: f32) {
         /*
         方針:
         vamanaのdelete algorithと同等の効果があるローカルノードの置き換えをオンデマンドで行う。
@@ -317,17 +277,42 @@ where
         todo!()
     }
 
-    fn remove(&mut self, _index: u32, _a: f32) {
+    pub fn remove(&mut self, _index: u32, _a: f32) {
         todo!()
     }
 
-    fn remove_list(&self) -> Vec<u32> {
+    pub fn remove_list(&self) -> Vec<u32> {
         todo!()
+    }
+
+    fn collect_active_edges(&self, node_index: u32) -> Vec<(u32, ActiveNode<P, R>)> {
+        match self.storage.get(&node_index) {
+            Some(Node::Active(active_node)) => {
+                // ActiveNode ならそのまま一つの要素のみ
+                vec![(node_index, active_node)]
+            }
+            Some(Node::Deleted(deleted_node)) => {
+                // DeletedNode なら、そこが持つ edges を辿って ActiveNode のみ取得
+                deleted_node
+                    .edges
+                    .iter()
+                    .filter_map(|&child_index| match self.storage.get(&child_index) {
+                        Some(Node::Active(child_active)) => Some((child_index, child_active)),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            None => {
+                vec![]
+            }
+        }
     }
 
     fn add_edge(&mut self, target_node_index: &u32, new_edge_node_index: u32) {
         debug!("add_edge: {target_node_index}, new_edge_node_index: {new_edge_node_index}");
-        let target_node = self.storage.get(target_node_index).expect("msg");
+        let Some(Node::Active(target_node)) = self.storage.get(target_node_index) else {
+            panic!("")
+        };
         let mut edges = target_node
             .edges
             .to_vec()
@@ -339,16 +324,20 @@ where
         debug!("add_edge: {:?}", edges);
 
         let new_edges = if edges.len() > R {
-            let candidates = edges
+            //
+            let candidates: Vec<_> = edges
                 .into_iter()
-                .map(|candidate_node_index| {
-                    let candidate_node = self.storage.get(&candidate_node_index).expect("msg");
+                .flat_map(|candidate_node_index| {
+                    // ActiveNode のみ抽出し、(edge_node_index, ActiveNode) の Vec を返す
+                    self.collect_active_edges(candidate_node_index)
+                })
+                .map(|(candidate_node_index, active_candidate_node)| {
                     (
-                        Dist(target_node.point.distance(&candidate_node.point)),
+                        Dist(target_node.point.distance(&active_candidate_node.point)),
                         candidate_node_index,
                     )
                 })
-                .sorted()
+                .sorted() // candidates should be order for merging to list
                 .collect();
 
             self.prune(candidates, 2.0)
@@ -373,10 +362,8 @@ where
 
         self.storage.set(
             *target_node_index,
-            Node {
-                point: target_node.point,
-                edges: new_edges,
-            },
+            // WIP: rcをどうするか？
+            Node::new(target_node.point, new_edges),
         );
     }
 }
@@ -473,7 +460,7 @@ mod tests {
 
         env_logger::init();
 
-        let iter_count = 10;
+        let iter_count = 500;
 
         let test_points: Vec<Point> = (0..iter_count)
             .into_iter()

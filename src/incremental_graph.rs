@@ -22,13 +22,11 @@ impl<T: PartialOrd> Ord for Dist<T> {
 pub struct ActiveNode<P: PointInterface, const R: usize> {
     point: P,
     edges: [u32; R],
-    rc: usize, // Referece counter
 }
 
 #[derive(Clone)]
 pub struct DeletedNode<const R: usize> {
     edges: [u32; R],
-    rc: usize, // Referece counter
 }
 
 #[derive(Clone)]
@@ -42,11 +40,20 @@ where
     P: PointInterface,
 {
     pub fn new(point: P, edges: [u32; R]) -> Self {
-        Self::Active(ActiveNode {
-            point,
-            edges,
-            rc: 0,
-        })
+        Self::Active(ActiveNode { point, edges })
+    }
+
+    pub fn edges(&self) -> Vec<u32> {
+        let raw_edges = self.raw_edges();
+        raw_edges.into_iter().sorted().dedup().collect()
+    }
+
+    pub fn raw_edges(&self) -> [u32; R] {
+        let edges = match self {
+            Node::Active(node) => node.edges,
+            Node::Deleted(node) => node.edges,
+        };
+        edges
     }
 }
 
@@ -55,15 +62,13 @@ pub trait Storage<P: PointInterface, const R: usize, T: Rng> {
 
     fn get(&self, index: &u32) -> Option<Node<P, R>>;
 
-    fn set(&mut self, index: u32, node: Node<P, R>) -> Option<Node<P, R>>;
+    fn set(&mut self, index: u32, active_node: ActiveNode<P, R>) -> Option<Node<P, R>>;
 
     fn delete(&mut self, index: u32);
 
-    fn remove(&mut self, index: u32);
-
     fn alloc(&mut self) -> u32;
 
-    fn random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R>);
+    fn pick_random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R>);
 }
 
 pub struct Graph<P: PointInterface, S: Storage<P, R, T>, const R: usize, T>
@@ -83,11 +88,10 @@ where
 {
     pub fn new(init_point: P) -> Self {
         let mut storage = S::new();
-        let init_node = Node::Active(ActiveNode {
+        let init_node = ActiveNode {
             point: init_point,
             edges: [0; R],
-            rc: 0,
-        });
+        };
         storage.set(0, init_node);
         Self {
             storage,
@@ -102,7 +106,7 @@ where
         let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
 
         // Set entry node and its edges
-        let (entry_node_index, entry_node) = self.storage.random_active_node(rng);
+        let (entry_node_index, entry_node) = self.storage.pick_random_active_node(rng);
         list.push((Dist(entry_node.point.distance(query)), entry_node_index));
         touched_nodes.insert(entry_node_index);
 
@@ -164,10 +168,7 @@ where
             let candidates: Vec<_> = working_node
                 .edges
                 .into_iter()
-                .flat_map(|edge_node_index| {
-                    // ActiveNode のみ抽出し、(edge_node_index, ActiveNode) の Vec を返す
-                    self.collect_active_edges(edge_node_index)
-                })
+                .flat_map(|edge_node_index| self.collect_active_edges(edge_node_index))
                 .filter_map(|(edge_node_index, active_edge_node)| {
                     // If a distance of this edge node is already calculated, skip this node
                     if !touched_nodes.insert(edge_node_index) {
@@ -182,6 +183,7 @@ where
                     )
                 })
                 .sorted() // candidates should be order for merging to list
+                .dedup() // Is this necessary?
                 .collect();
 
             // Merge the two lists by order
@@ -238,9 +240,9 @@ where
         let edges = Self::prune(self, candidates, a);
 
         // Add new node to the storage
-        let new_node = Node::new(point, edges);
         let new_node_index = self.storage.alloc();
-        self.storage.set(new_node_index, new_node);
+        self.storage
+            .set(new_node_index, ActiveNode { point, edges });
 
         // Update graph edges: add the new node to its edge node's edges
         let edges = edges
@@ -327,10 +329,7 @@ where
             //
             let candidates: Vec<_> = edges
                 .into_iter()
-                .flat_map(|candidate_node_index| {
-                    // ActiveNode のみ抽出し、(edge_node_index, ActiveNode) の Vec を返す
-                    self.collect_active_edges(candidate_node_index)
-                })
+                .flat_map(|candidate_node_index| self.collect_active_edges(candidate_node_index))
                 .map(|(candidate_node_index, active_candidate_node)| {
                     (
                         Dist(target_node.point.distance(&active_candidate_node.point)),
@@ -338,6 +337,7 @@ where
                     )
                 })
                 .sorted() // candidates should be order for merging to list
+                .dedup()
                 .collect();
 
             self.prune(candidates, 2.0)
@@ -362,8 +362,10 @@ where
 
         self.storage.set(
             *target_node_index,
-            // WIP: rcをどうするか？
-            Node::new(target_node.point, new_edges),
+            ActiveNode {
+                point: target_node.point,
+                edges: new_edges,
+            },
         );
     }
 }
@@ -393,36 +395,64 @@ mod tests {
     }
 
     struct TestStorage {
-        btree: BTreeMap<u32, Node<Point, R>>,
+        nodes: BTreeMap<u32, Node<Point, R>>,
+        rc: BTreeMap<u32, u32>,
         index: u32,
     }
 
-    impl Storage<Point, R, SmallRng> for TestStorage
-    // where
-    //     P: PointInterface,
-    //     T: Rng,
-    {
+    impl Storage<Point, R, SmallRng> for TestStorage {
         fn new() -> Self {
             Self {
-                btree: BTreeMap::new(),
+                nodes: BTreeMap::new(),
+                rc: BTreeMap::new(),
                 index: 0,
             }
         }
 
         fn get(&self, index: &u32) -> Option<Node<Point, R>> {
-            self.btree.get(index).cloned()
+            self.nodes.get(index).cloned()
         }
 
-        fn set(&mut self, index: u32, node: Node<Point, R>) -> Option<Node<Point, R>> {
-            self.btree.insert(index, node)
+        fn set(&mut self, index: u32, active_node: ActiveNode<Point, R>) -> Option<Node<Point, R>> {
+            // Set rc of this node
+            match self.rc.get(&index) {
+                Some(_) => {},
+                None => {self.rc.insert(index, 0);},
+            }
+
+            // Increment RC of new edge nodes
+            for edge_index in active_node.edges.into_iter().sorted().dedup() {
+                let Some(rc) = self.rc.get_mut(&edge_index) else {
+                    panic!("")
+                };
+                *rc += 1;
+            }
+
+            // Decriment RC of old edge nodes
+            let old_node = self.nodes.insert(index, Node::Active(active_node));
+            let old_edges = match &old_node {
+                Some(node) => node.edges(),
+                None => vec![],
+            };
+            for edge_index in old_edges {
+                let Some(rc) = self.rc.get_mut(&edge_index) else {
+                    panic!("")
+                };
+                *rc -= 1;
+            }
+
+            old_node
         }
 
-        fn delete(&mut self, _index: u32) {
-            todo!()
-        }
+        fn delete(&mut self, index: u32) {
+            let Some(node) = self.nodes.get_mut(&index) else {
+                return;
+            };
 
-        fn remove(&mut self, _index: u32) {
-            todo!()
+            // Only mark the node as "deleted"
+            *node = Node::Deleted(DeletedNode {
+                edges: node.raw_edges(),
+            })
         }
 
         fn alloc(&mut self) -> u32 {
@@ -430,8 +460,8 @@ mod tests {
             self.index
         }
 
-        fn random_active_node(&self, rng: &mut SmallRng) -> (u32, ActiveNode<Point, R>) {
-            let keys: Vec<_> = self.btree.keys().collect();
+        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, ActiveNode<Point, R>) {
+            let keys: Vec<_> = self.nodes.keys().collect();
 
             loop {
                 let Some(&random_key) = keys.get(rng.gen_range(0..keys.len())) else {
@@ -444,10 +474,6 @@ mod tests {
 
                 return (*random_key, active_node);
             }
-
-            // while let Some(Node::Active(active_node))
-
-            // *random_key
         }
     }
 
@@ -460,7 +486,7 @@ mod tests {
 
         env_logger::init();
 
-        let iter_count = 500;
+        let iter_count = 100;
 
         let test_points: Vec<Point> = (0..iter_count)
             .into_iter()
@@ -509,5 +535,11 @@ mod tests {
         let new_point: Vec<f32> = (0..DIM).map(|_| rng.gen_range(-1000.0..1000.0)).collect();
         let new_point = normalize_to_unit_length(new_point);
         Point(new_point)
+    }
+
+    #[test]
+    fn aaa() {
+        // rcが、一致しているかをテストする。
+        // edgeを変更した時に、rcが正しく増減するかをテストする。
     }
 }

@@ -176,7 +176,7 @@ where
         // Visit to a node that is nearest to query of current candidate nodes.
         loop {
             // Find an unvisited node that has smallest dist
-            let Some((_, next_visit_node)) = list
+            let Some((_, working_node_index)) = list
                 .iter()
                 .find(|(_, node_index)| visited_nodes.insert(*node_index))
             else {
@@ -186,14 +186,14 @@ where
                 break;
             };
 
-            // Get next node from the storage
-            let Some(Node::Active(working_node)) = self.storage.get(&next_visit_node) else {
+             // Get next node from the storage
+             let Some(working_node) = self.storage.get(&working_node_index) else {
                 panic!("working node should be active")
             };
 
             // New candidate nodes
             let candidates: Vec<_> = working_node
-                .edges
+                .edges()
                 .into_iter()
                 .filter_map(|edge_node_index| {
                     let Some(edge_node) = self.storage.get(&edge_node_index) else {
@@ -210,8 +210,30 @@ where
                 .dedup() // Is this necessary?
                 .collect();
 
+            // If the working node is deleted, remove this node from the list
+            let (new_list, candidates) = match working_node {
+                Node::Active(_) => {(list.clone(), candidates)},
+                Node::Deleted(_) => {
+                    let new_list: Vec<_> = list.clone().into_iter().filter_map(|(d, i)| {
+                        if i == *working_node_index {
+                            None
+                        } else {
+                            Some((d,i))
+                        }
+                    }).collect();
+                    let candidates: Vec<_> = candidates.into_iter().filter_map(|(d, i)| {
+                        if i == *working_node_index {
+                            None
+                        } else {
+                            Some((d,i))
+                        }
+                    }).collect();
+                    (new_list, candidates)
+                },
+            };
+
             // Merge current candidates lists and new ones by order
-            list = merge_lists(list.clone(), candidates, l);
+            list = merge_lists(new_list, candidates, l);
         }
 
         list

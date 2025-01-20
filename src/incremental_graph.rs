@@ -100,7 +100,7 @@ where
         }
     }
 
-    pub fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
+    pub fn search(&self, query: &P, l: usize, rng: &mut T) -> (Vec<(Dist<f32>, u32)>, Vec<u32>) {
         let mut list: Vec<(Dist<f32>, u32)> = vec![]; // This list has working nodes that is visited or candidate for next searching.
         let mut visited_nodes = FxHashSet::default();
         let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
@@ -110,6 +110,7 @@ where
         list.push((Dist(entry_node.point.distance(query)), entry_node_index));
         touched_nodes.insert(entry_node_index);
 
+        // Merge two Vecs into a Vec of max_length by order.
         fn merge_lists(
             list_a: Vec<(Dist<f32>, u32)>,
             list_b: Vec<(Dist<f32>, u32)>,
@@ -122,6 +123,7 @@ where
             let mut smallest_in_a = list_a.next();
             let mut smallest_in_b = list_b.next();
 
+            // Pushes smaller values.
             while new_list.len() < max_length {
                 match (smallest_in_a, smallest_in_b) {
                     (None, None) => break,
@@ -148,6 +150,9 @@ where
             new_list
         }
 
+        let mut collect_deleted_nodes = Vec::new();
+
+        // Visit to a node that is nearest to query of current candidate nodes.
         loop {
             // Find an unvisited node that has smallest dist
             let Some((_, next_visit_node)) = list
@@ -165,10 +170,11 @@ where
                 panic!("working node should be active")
             };
 
+            // New candidate nodes
             let candidates: Vec<_> = working_node
                 .edges
                 .into_iter()
-                .flat_map(|edge_node_index| self.collect_active_edges(edge_node_index))
+                .flat_map(|edge_node_index| self.collect_active_edges(edge_node_index, &mut collect_deleted_nodes))
                 .filter_map(|(edge_node_index, active_edge_node)| {
                     // If a distance of this edge node is already calculated, skip this node
                     if !touched_nodes.insert(edge_node_index) {
@@ -186,14 +192,16 @@ where
                 .dedup() // Is this necessary?
                 .collect();
 
-            // Merge the two lists by order
+            // Merge current candidates lists and new ones by order
             list = merge_lists(list.clone(), candidates, l);
         }
 
-        list
+        (list, collect_deleted_nodes)
     }
 
+    // Purne nodes in order to maintain edge diversity.
     pub fn prune(&mut self, mut candidates: Vec<(Dist<f32>, u32)>, a: f32) -> [u32; R] {
+        // Edge list is saved as R length sized array.
         let mut new_edge_nodes = [0; R]; // or u32::MAX
 
         if candidates.len() <= R {
@@ -234,9 +242,9 @@ where
         new_edge_nodes
     }
 
-    pub fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> u32 {
+    pub fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> (u32, Vec<u32>) {
         // Search the new point and use route nodes as candidates of its edges
-        let candidates = self.search(&point, l, rng);
+        let (candidates, mut collect_deleted_nodes) = self.search(&point, l, rng);
         let edges = Self::prune(self, candidates, a);
 
         // Add new node to the storage
@@ -253,15 +261,16 @@ where
             .collect::<Vec<_>>();
         debug!("node {new_node_index}: {:?}", edges);
         for edge_node_index in edges {
-            self.add_edge(&edge_node_index, new_node_index);
+            // If candidate list has delete nodes, uses undeleted edges of delete node instead.
+            self.add_edge(&edge_node_index, new_node_index, &mut collect_deleted_nodes);
         }
 
         debug!("\n");
 
-        new_node_index
+        (new_node_index, collect_deleted_nodes)
     }
 
-    pub fn delete(&mut self, _index: u32, _a: f32) {
+    pub fn delete(&mut self, index: u32, _a: f32) {
         /*
         方針:
         vamanaのdelete algorithと同等の効果があるローカルノードの置き換えをオンデマンドで行う。
@@ -273,10 +282,9 @@ where
         また、挿入の実装も小さくすることができる。
 
         削除したノードのエッジのindexをとっておく必要がある。
-
-
         */
-        todo!()
+
+        self.storage.delete(index);
     }
 
     pub fn remove(&mut self, _index: u32, _a: f32) {
@@ -287,13 +295,14 @@ where
         todo!()
     }
 
-    fn collect_active_edges(&self, node_index: u32) -> Vec<(u32, ActiveNode<P, R>)> {
+    fn collect_active_edges(&self, node_index: u32, collect_delete_nodes: &mut Vec<u32>) -> Vec<(u32, ActiveNode<P, R>)> {
         match self.storage.get(&node_index) {
             Some(Node::Active(active_node)) => {
                 // ActiveNode ならそのまま一つの要素のみ
                 vec![(node_index, active_node)]
             }
             Some(Node::Deleted(deleted_node)) => {
+                collect_delete_nodes.push(node_index);
                 // DeletedNode なら、そこが持つ edges を辿って ActiveNode のみ取得
                 deleted_node
                     .edges
@@ -310,7 +319,8 @@ where
         }
     }
 
-    fn add_edge(&mut self, target_node_index: &u32, new_edge_node_index: u32) {
+    // Add a new edge node to the node. If deleted nodes are included in its edge, removes them by delete algorithm. 
+    fn add_edge(&mut self, target_node_index: &u32, new_edge_node_index: u32, collect_deleted_nodes: &mut Vec<u32>) {
         debug!("add_edge: {target_node_index}, new_edge_node_index: {new_edge_node_index}");
         let Some(Node::Active(target_node)) = self.storage.get(target_node_index) else {
             panic!("")
@@ -326,10 +336,10 @@ where
         debug!("add_edge: {:?}", edges);
 
         let new_edges = if edges.len() > R {
-            //
             let candidates: Vec<_> = edges
                 .into_iter()
-                .flat_map(|candidate_node_index| self.collect_active_edges(candidate_node_index))
+                // If candidate list has delete nodes, uses undeleted edges of delete node instead.
+                .flat_map(|candidate_node_index| self.collect_active_edges(candidate_node_index, collect_deleted_nodes))
                 .map(|(candidate_node_index, active_candidate_node)| {
                     (
                         Dist(target_node.point.distance(&active_candidate_node.point)),
@@ -376,14 +386,14 @@ mod tests {
 
     use super::*;
     use itertools::Itertools;
-    use rand::rngs::SmallRng;
+    use rand::{rngs::SmallRng, seq::SliceRandom};
     use rand::SeedableRng;
     use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
     use rustc_hash::FxHashSet;
     use std::collections::BTreeMap;
 
-    const R: usize = 90;
-    const L: usize = 125;
+    const R: usize = 20;
+    const L: usize = 200;
 
     fn normalize_to_unit_length(vector: Vec<f32>) -> Vec<f32> {
         let norm: f32 = vector.iter().map(|&v| v * v).sum::<f32>().sqrt(); // ユークリッドノルムを計算
@@ -486,33 +496,52 @@ mod tests {
 
         env_logger::init();
 
-        let iter_count = 100;
+        let iter_count = 5000;
+        let split_count = 1000;
 
-        let test_points: Vec<Point> = (0..iter_count)
+        let mut test_points: Vec<(u32, Point)> = (0..iter_count)
             .into_iter()
-            .map(|_| gen_point(&mut rng))
+            .map(|i| (i+1, gen_point(&mut rng)))
             .collect();
 
-        for p in test_points.iter() {
-            graph.insert(p.clone(), 2.0, L, &mut rng);
+        for (index, p) in test_points.iter() {
+            let (new_index, _) = graph.insert(p.clone(), 2.0, L, &mut rng);
+            assert_eq!(*index, new_index);
         }
 
-        let hit_counts: f32 = test_points
+        test_points.shuffle(&mut rng);
+
+        for (i, _) in test_points[0..split_count].to_vec() {
+            graph.delete(i, 2.0);
+        }
+
+
+        let hit_counts: f32 = test_points[split_count as usize..]
             .par_iter()
             .map_init(
                 || SmallRng::from_entropy(),
-                |rng, p| {
+                |rng, (_, p)| {
                     let p = p.clone();
                     let ground_truth: Vec<(Dist<f32>, u32)> = test_points
                         .iter()
-                        .enumerate()
-                        .map(|(i, q)| (Dist(p.distance(q)), (i + 1) as u32))
+                        .map(|(i, q)| (Dist(p.distance(q)), *i))
                         .sorted()
                         .collect();
 
-                    let result = graph.search(&p, L, rng);
+                    let (result, _) = graph.search(&p, L, rng);
 
-                    debug!("{:?}, {:?}", ground_truth[0], result[0]);
+                    // println!("{:?}, {:?}", ground_truth.split(6), result[0..6]);
+                    let g_list: Vec<_> = ground_truth[0..5]
+                        .into_iter()
+                        .map(|(_, index)| index)
+                        .collect();
+                    let r_list: Vec<_> =
+                        result[0..5].into_iter().map(|(_, index)| index).collect();
+
+                    // for delete_index in 1..split_count {
+                    //     assert!(!r_list.contains(delete_index));
+                    // }
+                    // println!("{:?}, {:?}",g_list, r_list);
 
                     let set1: FxHashSet<_> = ground_truth[0..5]
                         .into_iter()

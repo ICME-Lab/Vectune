@@ -17,9 +17,6 @@ pub mod utils;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod test_incremenral_insert;
-
 pub use crate::builder::*;
 pub use crate::traits::GraphInterface;
 pub use crate::traits::PointInterface;

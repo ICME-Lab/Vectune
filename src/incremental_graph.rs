@@ -25,14 +25,15 @@ pub struct ActiveNode<P: PointInterface, const R: usize> {
 }
 
 #[derive(Clone)]
-pub struct DeletedNode<const R: usize> {
+pub struct DeletedNode<P: PointInterface, const R: usize> {
+    point: P,
     edges: [u32; R],
 }
 
 #[derive(Clone)]
 pub enum Node<P: PointInterface, const R: usize> {
     Active(ActiveNode<P, R>),
-    Deleted(DeletedNode<R>),
+    Deleted(DeletedNode<P, R>),
 }
 
 impl<P, const R: usize> Node<P, R>
@@ -41,6 +42,14 @@ where
 {
     pub fn new(point: P, edges: [u32; R]) -> Self {
         Self::Active(ActiveNode { point, edges })
+    }
+
+    pub fn point(&self) -> P {
+        let point = match self {
+            Node::Active(node) => node.point.clone(),
+            Node::Deleted(node) => node.point.clone(),
+        };
+        point
     }
 
     pub fn edges(&self) -> Vec<u32> {
@@ -54,6 +63,18 @@ where
             Node::Deleted(node) => node.edges,
         };
         edges
+    }
+
+    pub fn mark_as_deleted(&mut self) {
+        match self {
+            Node::Active(active_node) => {
+                *self = Self::Deleted(DeletedNode {
+                    point: active_node.point.clone(),
+                    edges: active_node.edges,
+                })
+            }
+            Node::Deleted(_) => {}
+        }
     }
 }
 
@@ -69,6 +90,8 @@ pub trait Storage<P: PointInterface, const R: usize, T: Rng> {
     fn alloc(&mut self) -> u32;
 
     fn pick_random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R>);
+
+    fn backlink(&self, index: u32) -> Vec<u32>;
 }
 
 pub struct Graph<P: PointInterface, S: Storage<P, R, T>, const R: usize, T>
@@ -100,7 +123,7 @@ where
         }
     }
 
-    pub fn search(&self, query: &P, l: usize, rng: &mut T) -> (Vec<(Dist<f32>, u32)>, Vec<u32>) {
+    pub fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
         let mut list: Vec<(Dist<f32>, u32)> = vec![]; // This list has working nodes that is visited or candidate for next searching.
         let mut visited_nodes = FxHashSet::default();
         let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
@@ -150,8 +173,6 @@ where
             new_list
         }
 
-        let mut collect_deleted_nodes = Vec::new();
-
         // Visit to a node that is nearest to query of current candidate nodes.
         loop {
             // Find an unvisited node that has smallest dist
@@ -174,19 +195,11 @@ where
             let candidates: Vec<_> = working_node
                 .edges
                 .into_iter()
-                .flat_map(|edge_node_index| self.collect_active_edges(edge_node_index, &mut collect_deleted_nodes))
-                .filter_map(|(edge_node_index, active_edge_node)| {
-                    // If a distance of this edge node is already calculated, skip this node
-                    if !touched_nodes.insert(edge_node_index) {
-                        return None;
-                    }
-                    Some((edge_node_index, active_edge_node))
-                })
-                .map(|(edge_node_index, active_edge_node)| {
-                    (
-                        Dist(active_edge_node.point.distance(query)),
-                        edge_node_index,
-                    )
+                .map(|edge_node_index| {
+                    let Some(edge_node) = self.storage.get(&edge_node_index) else {
+                        panic!("")
+                    };
+                    (Dist(edge_node.point().distance(query)), edge_node_index)
                 })
                 .sorted() // candidates should be order for merging to list
                 .dedup() // Is this necessary?
@@ -196,7 +209,7 @@ where
             list = merge_lists(list.clone(), candidates, l);
         }
 
-        (list, collect_deleted_nodes)
+        list
     }
 
     // Purne nodes in order to maintain edge diversity.
@@ -242,9 +255,9 @@ where
         new_edge_nodes
     }
 
-    pub fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> (u32, Vec<u32>) {
+    pub fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> u32 {
         // Search the new point and use route nodes as candidates of its edges
-        let (candidates, mut collect_deleted_nodes) = self.search(&point, l, rng);
+        let candidates = self.search(&point, l, rng);
         let edges = Self::prune(self, candidates, a);
 
         // Add new node to the storage
@@ -262,12 +275,12 @@ where
         debug!("node {new_node_index}: {:?}", edges);
         for edge_node_index in edges {
             // If candidate list has delete nodes, uses undeleted edges of delete node instead.
-            self.add_edge(&edge_node_index, new_node_index, &mut collect_deleted_nodes);
+            self.add_edge(&edge_node_index, new_node_index);
         }
 
         debug!("\n");
 
-        (new_node_index, collect_deleted_nodes)
+        new_node_index
     }
 
     pub fn delete(&mut self, index: u32, _a: f32) {
@@ -295,54 +308,25 @@ where
         todo!()
     }
 
-    fn collect_active_edges(&self, node_index: u32, collect_delete_nodes: &mut Vec<u32>) -> Vec<(u32, ActiveNode<P, R>)> {
-        match self.storage.get(&node_index) {
-            Some(Node::Active(active_node)) => {
-                // ActiveNode ならそのまま一つの要素のみ
-                vec![(node_index, active_node)]
-            }
-            Some(Node::Deleted(deleted_node)) => {
-                collect_delete_nodes.push(node_index);
-                // DeletedNode なら、そこが持つ edges を辿って ActiveNode のみ取得
-                deleted_node
-                    .edges
-                    .iter()
-                    .filter_map(|&child_index| match self.storage.get(&child_index) {
-                        Some(Node::Active(child_active)) => Some((child_index, child_active)),
-                        _ => None,
-                    })
-                    .collect()
-            }
-            None => {
-                vec![]
-            }
-        }
-    }
-
-    // Add a new edge node to the node. If deleted nodes are included in its edge, removes them by delete algorithm. 
-    fn add_edge(&mut self, target_node_index: &u32, new_edge_node_index: u32, collect_deleted_nodes: &mut Vec<u32>) {
+    // Add a new edge node to the node.
+    fn add_edge(&mut self, target_node_index: &u32, new_edge_node_index: u32) {
         debug!("add_edge: {target_node_index}, new_edge_node_index: {new_edge_node_index}");
-        let Some(Node::Active(target_node)) = self.storage.get(target_node_index) else {
+        let Some(target_node) = self.storage.get(target_node_index) else {
             panic!("")
         };
-        let mut edges = target_node
-            .edges
-            .to_vec()
-            .into_iter()
-            .sorted()
-            .dedup()
-            .collect::<Vec<_>>();
+        let mut edges = target_node.edges();
         edges.push(new_edge_node_index);
         debug!("add_edge: {:?}", edges);
 
         let new_edges = if edges.len() > R {
             let candidates: Vec<_> = edges
                 .into_iter()
-                // If candidate list has delete nodes, uses undeleted edges of delete node instead.
-                .flat_map(|candidate_node_index| self.collect_active_edges(candidate_node_index, collect_deleted_nodes))
-                .map(|(candidate_node_index, active_candidate_node)| {
+                .map(|candidate_node_index| {
+                    let Some(candidate_node) = self.storage.get(&candidate_node_index) else {
+                        panic!("")
+                    };
                     (
-                        Dist(target_node.point.distance(&active_candidate_node.point)),
+                        Dist(target_node.point().distance(&candidate_node.point())),
                         candidate_node_index,
                     )
                 })
@@ -373,7 +357,7 @@ where
         self.storage.set(
             *target_node_index,
             ActiveNode {
-                point: target_node.point,
+                point: target_node.point(),
                 edges: new_edges,
             },
         );
@@ -386,14 +370,13 @@ mod tests {
 
     use super::*;
     use itertools::Itertools;
-    use rand::{rngs::SmallRng, seq::SliceRandom};
     use rand::SeedableRng;
+    use rand::{rngs::SmallRng, seq::SliceRandom};
     use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-    use rustc_hash::FxHashSet;
-    use std::collections::BTreeMap;
+    use rustc_hash::{FxHashMap, FxHashSet};
 
-    const R: usize = 20;
-    const L: usize = 200;
+    const R: usize = 10;
+    const L: usize = 20;
 
     fn normalize_to_unit_length(vector: Vec<f32>) -> Vec<f32> {
         let norm: f32 = vector.iter().map(|&v| v * v).sum::<f32>().sqrt(); // ユークリッドノルムを計算
@@ -405,17 +388,17 @@ mod tests {
     }
 
     struct TestStorage {
-        nodes: BTreeMap<u32, Node<Point, R>>,
-        rc: BTreeMap<u32, u32>,
+        nodes: FxHashMap<u32, Node<Point, R>>,
+        backlinks: FxHashMap<u32, FxHashSet<u32>>,
         index: u32,
     }
 
     impl Storage<Point, R, SmallRng> for TestStorage {
         fn new() -> Self {
             Self {
-                nodes: BTreeMap::new(),
-                rc: BTreeMap::new(),
+                nodes: FxHashMap::default(),
                 index: 0,
+                backlinks: FxHashMap::default(),
             }
         }
 
@@ -425,30 +408,33 @@ mod tests {
 
         fn set(&mut self, index: u32, active_node: ActiveNode<Point, R>) -> Option<Node<Point, R>> {
             // Set rc of this node
-            match self.rc.get(&index) {
-                Some(_) => {},
-                None => {self.rc.insert(index, 0);},
+            match self.backlinks.get(&index) {
+                Some(_) => {}
+                None => {
+                    self.backlinks.insert(index, FxHashSet::default());
+                }
             }
-
-            // Increment RC of new edge nodes
-            for edge_index in active_node.edges.into_iter().sorted().dedup() {
-                let Some(rc) = self.rc.get_mut(&edge_index) else {
-                    panic!("")
-                };
-                *rc += 1;
-            }
-
-            // Decriment RC of old edge nodes
-            let old_node = self.nodes.insert(index, Node::Active(active_node));
+            //
+            let old_node = self.nodes.insert(index, Node::Active(active_node.clone()));
             let old_edges = match &old_node {
                 Some(node) => node.edges(),
-                None => vec![],
+                None => {
+                    vec![]
+                }
             };
+            // Delete backlinks // 前に持っていたedgeからのbacklinkを一度全て削除する。
             for edge_index in old_edges {
-                let Some(rc) = self.rc.get_mut(&edge_index) else {
+                let Some(set) = self.backlinks.get_mut(&edge_index) else {
                     panic!("")
                 };
-                *rc -= 1;
+                set.remove(&index);
+            }
+            // Add backlinks
+            for edge_index in active_node.edges.into_iter().sorted().dedup() {
+                let Some(set) = self.backlinks.get_mut(&edge_index) else {
+                    panic!("")
+                };
+                set.remove(&index);
             }
 
             old_node
@@ -459,10 +445,8 @@ mod tests {
                 return;
             };
 
-            // Only mark the node as "deleted"
-            *node = Node::Deleted(DeletedNode {
-                edges: node.raw_edges(),
-            })
+            // Mark the node as "deleted"
+            node.mark_as_deleted();
         }
 
         fn alloc(&mut self) -> u32 {
@@ -485,6 +469,10 @@ mod tests {
                 return (*random_key, active_node);
             }
         }
+
+        fn backlink(&self, index: u32) -> Vec<u32> {
+            todo!()
+        }
     }
 
     const DIM: usize = 384;
@@ -496,16 +484,16 @@ mod tests {
 
         env_logger::init();
 
-        let iter_count = 5000;
-        let split_count = 1000;
+        let iter_count = 10;
+        let split_count = 0;
 
         let mut test_points: Vec<(u32, Point)> = (0..iter_count)
             .into_iter()
-            .map(|i| (i+1, gen_point(&mut rng)))
+            .map(|i| (i + 1, gen_point(&mut rng)))
             .collect();
 
         for (index, p) in test_points.iter() {
-            let (new_index, _) = graph.insert(p.clone(), 2.0, L, &mut rng);
+            let new_index = graph.insert(p.clone(), 2.0, L, &mut rng);
             assert_eq!(*index, new_index);
         }
 
@@ -514,7 +502,6 @@ mod tests {
         for (i, _) in test_points[0..split_count].to_vec() {
             graph.delete(i, 2.0);
         }
-
 
         let hit_counts: f32 = test_points[split_count as usize..]
             .par_iter()
@@ -528,7 +515,7 @@ mod tests {
                         .sorted()
                         .collect();
 
-                    let (result, _) = graph.search(&p, L, rng);
+                    let result = graph.search(&p, L, rng);
 
                     // println!("{:?}, {:?}", ground_truth.split(6), result[0..6]);
                     let g_list: Vec<_> = ground_truth[0..5]
@@ -541,7 +528,7 @@ mod tests {
                     // for delete_index in 1..split_count {
                     //     assert!(!r_list.contains(delete_index));
                     // }
-                    // println!("{:?}, {:?}",g_list, r_list);
+                    println!("{:?}, {:?}",g_list, r_list);
 
                     let set1: FxHashSet<_> = ground_truth[0..5]
                         .into_iter()

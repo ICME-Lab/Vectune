@@ -195,11 +195,16 @@ where
             let candidates: Vec<_> = working_node
                 .edges
                 .into_iter()
-                .map(|edge_node_index| {
+                .filter_map(|edge_node_index| {
                     let Some(edge_node) = self.storage.get(&edge_node_index) else {
                         panic!("")
                     };
-                    (Dist(edge_node.point().distance(query)), edge_node_index)
+                    // If a distance of this edge node is already calculated, skip this node
+                    if !touched_nodes.insert(edge_node_index) {
+                        return None;
+                    }
+                    
+                    Some((Dist(edge_node.point().distance(query)), edge_node_index))
                 })
                 .sorted() // candidates should be order for merging to list
                 .dedup() // Is this necessary?
@@ -470,7 +475,7 @@ mod tests {
             }
         }
 
-        fn backlink(&self, index: u32) -> Vec<u32> {
+        fn backlink(&self, _index: u32) -> Vec<u32> {
             todo!()
         }
     }
@@ -484,7 +489,7 @@ mod tests {
 
         env_logger::init();
 
-        let iter_count = 10;
+        let iter_count = 100;
         let split_count = 0;
 
         let mut test_points: Vec<(u32, Point)> = (0..iter_count)

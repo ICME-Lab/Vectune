@@ -19,26 +19,26 @@ impl<T: PartialOrd> Ord for Dist<T> {
 }
 
 #[derive(Clone)]
-pub struct ActiveNode<P: PointInterface, const R: usize> {
+pub struct ActiveNode<P: PointInterface<D>, const R: usize, const D: usize> {
     point: P,
     edges: [u32; R],
 }
 
 #[derive(Clone)]
-pub struct DeletedNode<P: PointInterface, const R: usize> {
+pub struct DeletedNode<P: PointInterface<D>, const R: usize, const D: usize> {
     point: P,
     edges: [u32; R],
 }
 
 #[derive(Clone)]
-pub enum Node<P: PointInterface, const R: usize> {
-    Active(ActiveNode<P, R>),
-    Deleted(DeletedNode<P, R>),
+pub enum Node<P: PointInterface<D>, const R: usize, const D: usize> {
+    Active(ActiveNode<P, R, D>),
+    Deleted(DeletedNode<P, R, D>),
 }
 
-impl<P, const R: usize> Node<P, R>
+impl<P, const R: usize, const D: usize> Node<P, R, D>
 where
-    P: PointInterface,
+    P: PointInterface<D>,
 {
     pub fn new(point: P, edges: [u32; R]) -> Self {
         Self::Active(ActiveNode { point, edges })
@@ -78,23 +78,23 @@ where
     }
 }
 
-pub trait Storage<P: PointInterface, const R: usize, T: Rng> {
+pub trait Storage<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> {
     fn new() -> Self;
 
-    fn get(&self, index: &u32) -> Option<Node<P, R>>;
+    fn get(&self, index: &u32) -> Option<Node<P, R, D>>;
 
-    fn set(&mut self, index: u32, active_node: ActiveNode<P, R>) -> Option<Node<P, R>>;
+    fn set(&mut self, index: u32, active_node: ActiveNode<P, R, D>) -> Option<Node<P, R, D>>;
 
     fn delete(&mut self, index: u32);
 
     fn alloc(&mut self) -> u32;
 
-    fn pick_random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R>);
+    fn pick_random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R, D>);
 
     fn backlink(&self, index: u32) -> Vec<u32>;
 }
 
-pub struct Graph<P: PointInterface, S: Storage<P, R, T>, const R: usize, T>
+pub struct Graph<P: PointInterface<D>, S: Storage<P, R, D, T>, const R: usize, const D: usize, T>
 where
     T: Rng,
 {
@@ -103,10 +103,10 @@ where
     phantom2: std::marker::PhantomData<T>,
 }
 
-impl<P, S, const R: usize, T> Graph<P, S, R, T>
+impl<P, S, const R: usize, const D: usize, T> Graph<P, S, R, D, T>
 where
-    P: PointInterface,
-    S: Storage<P, R, T>,
+    P: PointInterface<D>,
+    S: Storage<P, R, D, T>,
     T: Rng,
 {
     pub fn new(init_point: P) -> Self {
@@ -214,20 +214,15 @@ where
             let (new_list, candidates) = match working_node {
                 Node::Active(_) => {(list.clone(), candidates)},
                 Node::Deleted(_) => {
-                    let new_list: Vec<_> = list.clone().into_iter().filter_map(|(d, i)| {
+                    let remove_deleted_node = |(d, i)| {
                         if i == *working_node_index {
                             None
                         } else {
                             Some((d,i))
                         }
-                    }).collect();
-                    let candidates: Vec<_> = candidates.into_iter().filter_map(|(d, i)| {
-                        if i == *working_node_index {
-                            None
-                        } else {
-                            Some((d,i))
-                        }
-                    }).collect();
+                    };
+                    let new_list: Vec<_> = list.clone().into_iter().filter_map(remove_deleted_node).collect();
+                    let candidates: Vec<_> = candidates.into_iter().filter_map(remove_deleted_node).collect();
                     (new_list, candidates)
                 },
             };
@@ -402,8 +397,8 @@ mod tests {
     use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
     use rustc_hash::{FxHashMap, FxHashSet};
 
-    const R: usize = 10;
-    const L: usize = 20;
+    const R: usize = 20;
+    const L: usize = 125;
 
     fn normalize_to_unit_length(vector: Vec<f32>) -> Vec<f32> {
         let norm: f32 = vector.iter().map(|&v| v * v).sum::<f32>().sqrt(); // ユークリッドノルムを計算
@@ -415,12 +410,12 @@ mod tests {
     }
 
     struct TestStorage {
-        nodes: FxHashMap<u32, Node<Point, R>>,
+        nodes: FxHashMap<u32, Node<Point<DIM>, R, DIM>>,
         backlinks: FxHashMap<u32, FxHashSet<u32>>,
         index: u32,
     }
 
-    impl Storage<Point, R, SmallRng> for TestStorage {
+    impl Storage<Point<DIM>, R, DIM, SmallRng> for TestStorage {
         fn new() -> Self {
             Self {
                 nodes: FxHashMap::default(),
@@ -429,11 +424,11 @@ mod tests {
             }
         }
 
-        fn get(&self, index: &u32) -> Option<Node<Point, R>> {
+        fn get(&self, index: &u32) -> Option<Node<Point<DIM>, R, DIM>> {
             self.nodes.get(index).cloned()
         }
 
-        fn set(&mut self, index: u32, active_node: ActiveNode<Point, R>) -> Option<Node<Point, R>> {
+        fn set(&mut self, index: u32, active_node: ActiveNode<Point<DIM>, R, DIM>) -> Option<Node<Point<DIM>, R, DIM>> {
             // Set rc of this node
             match self.backlinks.get(&index) {
                 Some(_) => {}
@@ -481,7 +476,7 @@ mod tests {
             self.index
         }
 
-        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, ActiveNode<Point, R>) {
+        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, ActiveNode<Point<DIM>, R, DIM>) {
             let keys: Vec<_> = self.nodes.keys().collect();
 
             loop {
@@ -507,14 +502,14 @@ mod tests {
     #[test]
     fn test_get() {
         let mut rng: SmallRng = SmallRng::from_entropy();
-        let mut graph: Graph<Point, TestStorage, R, SmallRng> = Graph::new(gen_point(&mut rng));
+        let mut graph: Graph<Point<DIM>, TestStorage, R, DIM, SmallRng> = Graph::new(gen_point(&mut rng));
 
         env_logger::init();
 
-        let iter_count = 100;
+        let iter_count = 500;
         let split_count = 0;
 
-        let mut test_points: Vec<(u32, Point)> = (0..iter_count)
+        let mut test_points: Vec<(u32, Point<DIM>)> = (0..iter_count)
             .into_iter()
             .map(|i| (i + 1, gen_point(&mut rng)))
             .collect();
@@ -555,7 +550,7 @@ mod tests {
                     // for delete_index in 1..split_count {
                     //     assert!(!r_list.contains(delete_index));
                     // }
-                    println!("{:?}, {:?}",g_list, r_list);
+                    // println!("{:?}, {:?}",g_list, r_list);
 
                     let set1: FxHashSet<_> = ground_truth[0..5]
                         .into_iter()
@@ -574,14 +569,14 @@ mod tests {
         println!("{:?}", hit_counts / ((5 * iter_count) as f32));
     }
 
-    fn gen_point(rng: &mut SmallRng) -> Point {
+    fn gen_point(rng: &mut SmallRng) -> Point<DIM> {
         let new_point: Vec<f32> = (0..DIM).map(|_| rng.gen_range(-1000.0..1000.0)).collect();
         let new_point = normalize_to_unit_length(new_point);
         Point(new_point)
     }
 
     #[test]
-    fn aaa() {
+    fn test_backlinks() {
         // rcが、一致しているかをテストする。
         // edgeを変更した時に、rcが正しく増減するかをテストする。
     }

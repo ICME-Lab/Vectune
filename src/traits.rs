@@ -9,7 +9,7 @@
 ///     ...
 /// }
 /// ```
-pub trait PointInterface: Clone + Sync + Send {
+pub trait PointInterface<const DIM: usize>: Clone + Sync + Send {
     /// A function that returns the distance between two Points. Typically, the Euclidean distance is used.
     ///
     /// # Examples

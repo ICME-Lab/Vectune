@@ -19,21 +19,10 @@ impl<T: PartialOrd> Ord for Dist<T> {
 }
 
 #[derive(Clone)]
-pub struct ActiveNode<P: PointInterface<D>, const R: usize, const D: usize> {
+pub struct Node<P: PointInterface<D>, const R: usize, const D: usize> {
     point: P,
     edges: [u32; R],
-}
-
-#[derive(Clone)]
-pub struct DeletedNode<P: PointInterface<D>, const R: usize, const D: usize> {
-    point: P,
-    edges: [u32; R],
-}
-
-#[derive(Clone)]
-pub enum Node<P: PointInterface<D>, const R: usize, const D: usize> {
-    Active(ActiveNode<P, R, D>),
-    Deleted(DeletedNode<P, R, D>),
+    alive: bool,
 }
 
 impl<P, const R: usize, const D: usize> Node<P, R, D>
@@ -41,15 +30,11 @@ where
     P: PointInterface<D>,
 {
     pub fn new(point: P, edges: [u32; R]) -> Self {
-        Self::Active(ActiveNode { point, edges })
+        Self { point, edges, alive: true }
     }
 
     pub fn point(&self) -> P {
-        let point = match self {
-            Node::Active(node) => node.point.clone(),
-            Node::Deleted(node) => node.point.clone(),
-        };
-        point
+        self.point.clone()
     }
 
     pub fn edges(&self) -> Vec<u32> {
@@ -58,23 +43,11 @@ where
     }
 
     pub fn raw_edges(&self) -> [u32; R] {
-        let edges = match self {
-            Node::Active(node) => node.edges,
-            Node::Deleted(node) => node.edges,
-        };
-        edges
+        self.edges
     }
 
     pub fn mark_as_deleted(&mut self) {
-        match self {
-            Node::Active(active_node) => {
-                *self = Self::Deleted(DeletedNode {
-                    point: active_node.point.clone(),
-                    edges: active_node.edges,
-                })
-            }
-            Node::Deleted(_) => {}
-        }
+        self.alive = false;
     }
 }
 
@@ -83,13 +56,13 @@ pub trait Storage<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> 
 
     fn get(&self, index: &u32) -> Option<Node<P, R, D>>;
 
-    fn set(&mut self, index: u32, active_node: ActiveNode<P, R, D>) -> Option<Node<P, R, D>>;
+    fn set(&mut self, index: u32, node: Node<P, R, D>) -> Option<Node<P, R, D>>;
 
     fn delete(&mut self, index: u32);
 
     fn alloc(&mut self) -> u32;
 
-    fn pick_random_active_node(&self, rng: &mut T) -> (u32, ActiveNode<P, R, D>);
+    fn pick_random_active_node(&self, rng: &mut T) -> (u32, Node<P, R, D>);
 
     fn backlink(&self, index: u32) -> Vec<u32>;
 }
@@ -111,9 +84,10 @@ where
 {
     pub fn new(init_point: P) -> Self {
         let mut storage = S::new();
-        let init_node = ActiveNode {
+        let init_node = Node {
             point: init_point,
             edges: [0; R],
+            alive: true,
         };
         storage.set(0, init_node);
         Self {
@@ -211,9 +185,9 @@ where
                 .collect();
 
             // If the working node is deleted, remove this node from the list
-            let (new_list, candidates) = match working_node {
-                Node::Active(_) => {(list.clone(), candidates)},
-                Node::Deleted(_) => {
+            let (new_list, candidates) = match working_node.alive {
+                true => {(list.clone(), candidates)},
+                false => {
                     let remove_deleted_node = |(d, i)| {
                         if i == *working_node_index {
                             None
@@ -256,12 +230,14 @@ where
 
                 // if α · d(p*, p') <= d(p, p') then remove p' from v
                 candidates.retain(|&(dist_xp_pd, pd)| {
-                    let Some(Node::Active(pa_node)) = self.storage.get(&pa) else {
-                        panic!("")
-                    };
-                    let Some(Node::Active(pd_node)) = self.storage.get(&pd) else {
-                        panic!("")
-                    };
+                    // let Some(Node::Active(pa_node)) = self.storage.get(&pa) else {
+                    //     panic!("")
+                    // };
+                    // let Some(Node::Active(pd_node)) = self.storage.get(&pd) else {
+                    //     panic!("")
+                    // };
+                    let pa_node = self.storage.get(&pa).expect("msg");
+                    let pd_node = self.storage.get(&pd).expect("msg");
                     let dist_pa_pd = pa_node.point.distance(&pd_node.point);
 
                     a * dist_pa_pd > dist_xp_pd.0
@@ -285,7 +261,7 @@ where
         // Add new node to the storage
         let new_node_index = self.storage.alloc();
         self.storage
-            .set(new_node_index, ActiveNode { point, edges });
+            .set(new_node_index, Node { point, edges, alive: true });
 
         // Update graph edges: add the new node to its edge node's edges
         let edges = edges
@@ -378,9 +354,10 @@ where
 
         self.storage.set(
             *target_node_index,
-            ActiveNode {
+            Node {
                 point: target_node.point(),
                 edges: new_edges,
+                alive: true
             },
         );
     }
@@ -428,7 +405,7 @@ mod tests {
             self.nodes.get(index).cloned()
         }
 
-        fn set(&mut self, index: u32, active_node: ActiveNode<Point<DIM>, R, DIM>) -> Option<Node<Point<DIM>, R, DIM>> {
+        fn set(&mut self, index: u32, active_node: Node<Point<DIM>, R, DIM>) -> Option<Node<Point<DIM>, R, DIM>> {
             // Set rc of this node
             match self.backlinks.get(&index) {
                 Some(_) => {}
@@ -437,7 +414,7 @@ mod tests {
                 }
             }
             //
-            let old_node = self.nodes.insert(index, Node::Active(active_node.clone()));
+            let old_node = self.nodes.insert(index, active_node.clone());
             let old_edges = match &old_node {
                 Some(node) => node.edges(),
                 None => {
@@ -476,7 +453,7 @@ mod tests {
             self.index
         }
 
-        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, ActiveNode<Point<DIM>, R, DIM>) {
+        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, Node<Point<DIM>, R, DIM>) {
             let keys: Vec<_> = self.nodes.keys().collect();
 
             loop {
@@ -484,7 +461,7 @@ mod tests {
                     panic!("btree is empty")
                 };
 
-                let Some(Node::Active(active_node)) = self.get(random_key) else {
+                let Some(active_node) = self.get(random_key) else {
                     continue;
                 };
 

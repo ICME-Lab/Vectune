@@ -104,7 +104,7 @@ pub fn insert_dist(value: (f32, u32), vec: &mut Vec<(f32, u32)>) {
     };
 }
 
-use crate::graph_store::GraphHeader;
+// use crate::graph_store::GraphHeader;
 
 type Vector = [f32];
 type Edges = [u32];
@@ -176,6 +176,6 @@ pub fn node_byte_size(vector_dim: usize, max_edge_degrees: usize) -> usize {
     node_byte_size
 }
 
-pub fn file_byte_size(node_byte_size: usize, num_vectors: usize) -> usize {
-    std::mem::size_of::<GraphHeader>() + num_vectors * node_byte_size
-}
+// pub fn file_byte_size(node_byte_size: usize, num_vectors: usize) -> usize {
+//     std::mem::size_of::<GraphHeader>() + num_vectors * node_byte_size
+// }

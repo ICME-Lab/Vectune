@@ -128,14 +128,10 @@ where
         heap.push(Reverse((entry_dist, entry_node_index)));
         touched_nodes.insert(entry_node_index);
 
-        let mut iter_count = 0;
-
         // Repeatedly pop the closest unvisited node
         while let Some(Reverse((dist, node_index))) = heap.pop() {
             // If we’ve never visited it before, process it
             if visited_nodes.insert(node_index) {
-
-                iter_count +=1;
 
                 let Some(working_node) = self.storage.get(&node_index) else {
                     panic!("working node should be active");
@@ -166,8 +162,6 @@ where
             }
         }
 
-        ic_cdk::println!("iter_count: {iter_count}");
-
         // You may want them strictly sorted by distance in the final output
         result.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         // Truncate to the `l` nearest
@@ -191,27 +185,29 @@ where
             return new_edge_nodes;
         }
 
+        let mut candidates : Vec<(Dist<f32>, P, u32)> = candidates.into_iter().map(|(dist, node_index)| {
+            let node = self.storage.get(&node_index).expect("Expected an active node");
+            let point = node.point;
+            (dist, point, node_index)
+        }).collect();
+
         let mut edge_count = 0;
         let mut i = 0; // Current index of the candidate we're selecting
 
         // We keep going while we haven't selected R edges and still have candidates.
         while i < candidates.len() && edge_count < R {
             // Take the candidate at position `i` (assumed "nearest" if sorted).
-            let (_, pa) = candidates[i];
+            let (_, pa_point, pa) = candidates[i].clone();
             new_edge_nodes[edge_count] = pa;
             edge_count += 1;
-
-            let pa_node = self.storage.get(&pa).expect("Expected an active node");
-            let pa_point = &pa_node.point;
 
             // Now we remove from the *remaining* candidates any that fail:
             //     α·d(p*, p') > d(p, p')
             // We'll do it in-place using `swap_remove`.
             let mut j = i + 1;
             while j < candidates.len() {
-                let (dist_xp_pd, pd) = candidates[j];
-                let pd_node = self.storage.get(&pd).expect("Expected an active node");
-                let dist_pa_pd = pa_point.distance(&pd_node.point);
+                let (dist_xp_pd, pd_point, _pd) = candidates[j].clone();
+                let dist_pa_pd = pa_point.distance(&pd_point);
 
                 // If this candidate *does not* meet the condition, we remove it.
                 if a * dist_pa_pd <= dist_xp_pd.0 {

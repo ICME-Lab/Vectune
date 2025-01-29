@@ -1,7 +1,7 @@
 use crate::PointInterface;
 
 #[derive(Clone, Debug)]
-pub struct Point<const D: usize>(pub Vec<f32>);
+pub struct Point<const D: usize>(pub [f32; D]);
 
 impl<const D: usize> PointInterface<D> for Point<D> {
     fn distance(&self, other: &Self) -> f32 {
@@ -30,7 +30,11 @@ impl<const D: usize> PointInterface<D> for Point<D> {
         self.0.iter().copied().collect()
     }
     fn from_f32_vec(a: Vec<f32>) -> Self {
-        Point(a.into_iter().collect())
+        Point(a.try_into().unwrap())
+    }
+
+    fn raw(&self) -> [f32; D] {
+        self.0.clone()
     }
 }
 

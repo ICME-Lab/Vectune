@@ -69,6 +69,8 @@ pub trait PointInterface<const DIM: usize>: Clone + Sync + Send {
 
     fn to_f32_vec(&self) -> Vec<f32>;
     fn from_f32_vec(a: Vec<f32>) -> Self;
+
+    fn raw(&self) -> [f32; DIM];
 }
 
 /// Traits that should be implemented for searching, inserting, and deleting after indexing.

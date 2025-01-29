@@ -1,5 +1,10 @@
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
 use itertools::Itertools;
 use log::debug;
+use num_format::Locale;
+use num_format::ToFormattedString;
 use rand::Rng;
 use rustc_hash::FxHashSet;
 
@@ -20,9 +25,9 @@ impl<T: PartialOrd> Ord for Dist<T> {
 
 #[derive(Clone)]
 pub struct Node<P: PointInterface<D>, const R: usize, const D: usize> {
-    point: P,
-    edges: [u32; R],
-    alive: bool,
+    pub point: P,
+    pub edges: [u32; R],
+    pub alive: bool,
 }
 
 impl<P, const R: usize, const D: usize> Node<P, R, D>
@@ -30,7 +35,11 @@ where
     P: PointInterface<D>,
 {
     pub fn new(point: P, edges: [u32; R]) -> Self {
-        Self { point, edges, alive: true }
+        Self {
+            point,
+            edges,
+            alive: true,
+        }
     }
 
     pub fn point(&self) -> P {
@@ -51,7 +60,7 @@ where
     }
 }
 
-pub trait Storage<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> {
+pub trait StorageTrait<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> {
     fn new() -> Self;
 
     fn get(&self, index: &u32) -> Option<Node<P, R, D>>;
@@ -67,8 +76,13 @@ pub trait Storage<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> 
     fn backlink(&self, index: u32) -> Vec<u32>;
 }
 
-pub struct Graph<P: PointInterface<D>, S: Storage<P, R, D, T>, const R: usize, const D: usize, T>
-where
+pub struct Graph<
+    P: PointInterface<D>,
+    S: StorageTrait<P, R, D, T>,
+    const R: usize,
+    const D: usize,
+    T,
+> where
     T: Rng,
 {
     storage: S,
@@ -79,7 +93,7 @@ where
 impl<P, S, const R: usize, const D: usize, T> Graph<P, S, R, D, T>
 where
     P: PointInterface<D>,
-    S: Storage<P, R, D, T>,
+    S: StorageTrait<P, R, D, T>,
     T: Rng,
 {
     pub fn new(init_point: P) -> Self {
@@ -96,117 +110,175 @@ where
             phantom2: std::marker::PhantomData,
         }
     }
-
     pub fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
-        let mut list: Vec<(Dist<f32>, u32)> = vec![]; // This list has working nodes that is visited or candidate for next searching.
+        let mut result = Vec::new();
+        // “visited” tracks which nodes we have *finished* processing
         let mut visited_nodes = FxHashSet::default();
-        let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
+        // “touched” tracks which nodes we have *pushed* into the heap at least once
+        let mut touched_nodes = FxHashSet::default();
 
-        // Set entry node and its edges
+        // A min-heap is emulated by using Reverse(...) in Rust's max-heap
+        let mut heap = BinaryHeap::new();
+
+        // Pick a random active node
         let (entry_node_index, entry_node) = self.storage.pick_random_active_node(rng);
-        list.push((Dist(entry_node.point.distance(query)), entry_node_index));
+        let entry_dist = Dist(entry_node.point.distance(query));
+
+        // Push the starting node onto the heap
+        heap.push(Reverse((entry_dist, entry_node_index)));
         touched_nodes.insert(entry_node_index);
 
-        // Merge two Vecs into a Vec of max_length by order.
-        fn merge_lists(
-            list_a: Vec<(Dist<f32>, u32)>,
-            list_b: Vec<(Dist<f32>, u32)>,
-            max_length: usize,
-        ) -> Vec<(Dist<f32>, u32)> {
-            let mut new_list = Vec::new();
-            let mut list_a = list_a.into_iter();
-            let mut list_b = list_b.into_iter();
+        // Repeatedly pop the closest unvisited node
+        while let Some(Reverse((dist, node_index))) = heap.pop() {
+            // If we’ve never visited it before, process it
+            if visited_nodes.insert(node_index) {
+                let Some(working_node) = self.storage.get(&node_index) else {
+                    panic!("working node should be active");
+                };
 
-            let mut smallest_in_a = list_a.next();
-            let mut smallest_in_b = list_b.next();
+                // If the node is alive, add it to our result set
+                if working_node.alive {
+                    result.push((dist, node_index));
+                }
 
-            // Pushes smaller values.
-            while new_list.len() < max_length {
-                match (smallest_in_a, smallest_in_b) {
-                    (None, None) => break,
-                    (Some(a), None) => {
-                        new_list.push(a);
-                        smallest_in_a = list_a.next();
-                    }
-                    (None, Some(b)) => {
-                        new_list.push(b);
-                        smallest_in_b = list_b.next();
-                    }
-                    (Some(a), Some(b)) => {
-                        if a < b {
-                            new_list.push(a);
-                            smallest_in_a = list_a.next();
-                        } else {
-                            new_list.push(b);
-                            smallest_in_b = list_b.next();
-                        }
+                // Whether alive or not, we still explore its edges
+                for edge_node_index in working_node.edges() {
+                    // Only push if we haven't “touched” it before
+                    if touched_nodes.insert(edge_node_index) {
+                        let Some(edge_node) = self.storage.get(&edge_node_index) else {
+                            panic!("edge node should be active");
+                        };
+                        let edge_dist = Dist(edge_node.point().distance(query));
+                        // Push neighbor into the heap
+                        heap.push(Reverse((edge_dist, edge_node_index)));
                     }
                 }
+
+                // If we only care about the first `l` alive nodes, we can stop early
+                if result.len() >= l {
+                    break;
+                }
             }
-
-            new_list
         }
 
-        // Visit to a node that is nearest to query of current candidate nodes.
-        loop {
-            // Find an unvisited node that has smallest dist
-            let Some((_, working_node_index)) = list
-                .iter()
-                .find(|(_, node_index)| visited_nodes.insert(*node_index))
-            else {
-                // If all nodes in the list have been visited, searching is finished
-                // The results are the fist k nodes in the list
-                // debug!("search: break");
-                break;
-            };
+        // You may want them strictly sorted by distance in the final output
+        result.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        // Truncate to the `l` nearest
+        result.truncate(l);
 
-             // Get next node from the storage
-             let Some(working_node) = self.storage.get(&working_node_index) else {
-                panic!("working node should be active")
-            };
-
-            // New candidate nodes
-            let candidates: Vec<_> = working_node
-                .edges()
-                .into_iter()
-                .filter_map(|edge_node_index| {
-                    let Some(edge_node) = self.storage.get(&edge_node_index) else {
-                        panic!("")
-                    };
-                    // If a distance of this edge node is already calculated, skip this node
-                    if !touched_nodes.insert(edge_node_index) {
-                        return None;
-                    }
-                    
-                    Some((Dist(edge_node.point().distance(query)), edge_node_index))
-                })
-                .sorted() // candidates should be order for merging to list
-                .dedup() // Is this necessary?
-                .collect();
-
-            // If the working node is deleted, remove this node from the list
-            let (new_list, candidates) = match working_node.alive {
-                true => {(list.clone(), candidates)},
-                false => {
-                    let remove_deleted_node = |(d, i)| {
-                        if i == *working_node_index {
-                            None
-                        } else {
-                            Some((d,i))
-                        }
-                    };
-                    let new_list: Vec<_> = list.clone().into_iter().filter_map(remove_deleted_node).collect();
-                    let candidates: Vec<_> = candidates.into_iter().filter_map(remove_deleted_node).collect();
-                    (new_list, candidates)
-                },
-            };
-
-            // Merge current candidates lists and new ones by order
-            list = merge_lists(new_list, candidates, l);
-        }
-
-        list
+        result
     }
+
+    // pub fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
+    //     let mut list: Vec<(Dist<f32>, u32)> = Vec::with_capacity(l); // This list has working nodes that is visited or candidate for next searching.
+    //     let mut visited_nodes = FxHashSet::default();
+    //     let mut touched_nodes = FxHashSet::default(); // Used for avoiding recalculation of distance already in list
+
+    //     // Set entry node and its edges
+    //     let (entry_node_index, entry_node) = self.storage.pick_random_active_node(rng);
+    //     list.push((Dist(entry_node.point.distance(query)), entry_node_index));
+    //     touched_nodes.insert(entry_node_index);
+
+    //     // Merge two Vecs into a Vec of max_length by order.
+    //     fn merge_lists(
+    //         list_a: Vec<(Dist<f32>, u32)>,
+    //         list_b: Vec<(Dist<f32>, u32)>,
+    //         max_length: usize,
+    //     ) -> Vec<(Dist<f32>, u32)> {
+    //         let mut new_list = Vec::new();
+    //         let mut list_a = list_a.into_iter();
+    //         let mut list_b = list_b.into_iter();
+
+    //         let mut smallest_in_a = list_a.next();
+    //         let mut smallest_in_b = list_b.next();
+
+    //         // Pushes smaller values.
+    //         while new_list.len() < max_length {
+    //             match (smallest_in_a, smallest_in_b) {
+    //                 (None, None) => break,
+    //                 (Some(a), None) => {
+    //                     new_list.push(a);
+    //                     smallest_in_a = list_a.next();
+    //                 }
+    //                 (None, Some(b)) => {
+    //                     new_list.push(b);
+    //                     smallest_in_b = list_b.next();
+    //                 }
+    //                 (Some(a), Some(b)) => {
+    //                     if a < b {
+    //                         new_list.push(a);
+    //                         smallest_in_a = list_a.next();
+    //                     } else {
+    //                         new_list.push(b);
+    //                         smallest_in_b = list_b.next();
+    //                     }
+    //                 }
+    //             }
+    //         }
+
+    //         new_list
+    //     }
+
+    //     // Visit to a node that is nearest to query of current candidate nodes.
+    //     loop {
+    //         // Find an unvisited node that has smallest dist
+    //         let Some((_, working_node_index)) = list
+    //             .iter()
+    //             .find(|(_, node_index)| visited_nodes.insert(*node_index))
+    //         else {
+    //             // If all nodes in the list have been visited, searching is finished
+    //             // The results are the fist k nodes in the list
+    //             // debug!("search: break");
+    //             break;
+    //         };
+
+    //          // Get next node from the storage
+    //          let Some(working_node) = self.storage.get(&working_node_index) else {
+    //             panic!("working node should be active")
+    //         };
+
+    //         // New candidate nodes
+    //         let candidates: Vec<_> = working_node
+    //             .edges()
+    //             .into_iter()
+    //             .filter_map(|edge_node_index| {
+    //                 let Some(edge_node) = self.storage.get(&edge_node_index) else {
+    //                     panic!("")
+    //                 };
+    //                 // If a distance of this edge node is already calculated, skip this node
+    //                 if !touched_nodes.insert(edge_node_index) {
+    //                     return None;
+    //                 }
+
+    //                 Some((Dist(edge_node.point().distance(query)), edge_node_index))
+    //             })
+    //             .sorted() // candidates should be order for merging to list
+    //             .dedup() // Is this necessary?
+    //             .collect();
+
+    //         // If the working node is deleted, remove this node from the list
+    //         let (new_list, candidates) = match working_node.alive {
+    //             true => {(list.clone(), candidates)},
+    //             false => {
+    //                 let remove_deleted_node = |(d, i)| {
+    //                     if i == *working_node_index {
+    //                         None
+    //                     } else {
+    //                         Some((d,i))
+    //                     }
+    //                 };
+    //                 let new_list: Vec<_> = list.clone().into_iter().filter_map(remove_deleted_node).collect();
+    //                 let candidates: Vec<_> = candidates.into_iter().filter_map(remove_deleted_node).collect();
+    //                 (new_list, candidates)
+    //             },
+    //         };
+
+    //         // Merge current candidates lists and new ones by order
+    //         list = merge_lists(new_list, candidates, l);
+    //     }
+
+    //     list
+    // }
 
     // Purne nodes in order to maintain edge diversity.
     pub fn prune(&mut self, mut candidates: Vec<(Dist<f32>, u32)>, a: f32) -> [u32; R] {
@@ -248,6 +320,8 @@ where
                     break;
                 }
             }
+
+            display_instruction_counter("purne");
         }
 
         new_edge_nodes
@@ -258,10 +332,18 @@ where
         let candidates = self.search(&point, l, rng);
         let edges = Self::prune(self, candidates, a);
 
+        display_instruction_counter("search");
+
         // Add new node to the storage
         let new_node_index = self.storage.alloc();
-        self.storage
-            .set(new_node_index, Node { point, edges, alive: true });
+        self.storage.set(
+            new_node_index,
+            Node {
+                point,
+                edges,
+                alive: true,
+            },
+        );
 
         // Update graph edges: add the new node to its edge node's edges
         let edges = edges
@@ -271,9 +353,11 @@ where
             .dedup()
             .collect::<Vec<_>>();
         debug!("node {new_node_index}: {:?}", edges);
+        // display_instruction_counter("start add_edge");
         for edge_node_index in edges {
             // If candidate list has delete nodes, uses undeleted edges of delete node instead.
             self.add_edge(&edge_node_index, new_node_index);
+            // display_instruction_counter(&format!("add_edge,{edge_node_index}"));
         }
 
         debug!("\n");
@@ -357,8 +441,19 @@ where
             Node {
                 point: target_node.point(),
                 edges: new_edges,
-                alive: true
+                alive: true,
             },
+        );
+    }
+}
+
+fn display_instruction_counter(name: &str) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let counter = ic_cdk::api::instruction_counter();
+        ic_cdk::println!(
+            "[Inst Counter] \"{name}\": {}",
+            counter.to_formatted_string(&Locale::en)
         );
     }
 }
@@ -392,7 +487,7 @@ mod tests {
         index: u32,
     }
 
-    impl Storage<Point<DIM>, R, DIM, SmallRng> for TestStorage {
+    impl StorageTrait<Point<DIM>, R, DIM, SmallRng> for TestStorage {
         fn new() -> Self {
             Self {
                 nodes: FxHashMap::default(),
@@ -405,7 +500,11 @@ mod tests {
             self.nodes.get(index).cloned()
         }
 
-        fn set(&mut self, index: u32, active_node: Node<Point<DIM>, R, DIM>) -> Option<Node<Point<DIM>, R, DIM>> {
+        fn set(
+            &mut self,
+            index: u32,
+            active_node: Node<Point<DIM>, R, DIM>,
+        ) -> Option<Node<Point<DIM>, R, DIM>> {
             // Set rc of this node
             match self.backlinks.get(&index) {
                 Some(_) => {}
@@ -433,7 +532,7 @@ mod tests {
                 let Some(set) = self.backlinks.get_mut(&edge_index) else {
                     panic!("")
                 };
-                set.remove(&index);
+                set.insert(index);
             }
 
             old_node
@@ -479,7 +578,8 @@ mod tests {
     #[test]
     fn test_get() {
         let mut rng: SmallRng = SmallRng::from_entropy();
-        let mut graph: Graph<Point<DIM>, TestStorage, R, DIM, SmallRng> = Graph::new(gen_point(&mut rng));
+        let mut graph: Graph<Point<DIM>, TestStorage, R, DIM, SmallRng> =
+            Graph::new(gen_point(&mut rng));
 
         env_logger::init();
 
@@ -521,8 +621,7 @@ mod tests {
                         .into_iter()
                         .map(|(_, index)| index)
                         .collect();
-                    let r_list: Vec<_> =
-                        result[0..5].into_iter().map(|(_, index)| index).collect();
+                    let r_list: Vec<_> = result[0..5].into_iter().map(|(_, index)| index).collect();
 
                     // for delete_index in 1..split_count {
                     //     assert!(!r_list.contains(delete_index));
@@ -549,7 +648,7 @@ mod tests {
     fn gen_point(rng: &mut SmallRng) -> Point<DIM> {
         let new_point: Vec<f32> = (0..DIM).map(|_| rng.gen_range(-1000.0..1000.0)).collect();
         let new_point = normalize_to_unit_length(new_point);
-        Point(new_point)
+        Point(new_point.try_into().unwrap())
     }
 
     #[test]

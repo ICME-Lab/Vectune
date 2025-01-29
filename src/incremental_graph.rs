@@ -128,10 +128,15 @@ where
         heap.push(Reverse((entry_dist, entry_node_index)));
         touched_nodes.insert(entry_node_index);
 
+        let mut iter_count = 0;
+
         // Repeatedly pop the closest unvisited node
         while let Some(Reverse((dist, node_index))) = heap.pop() {
             // If we’ve never visited it before, process it
             if visited_nodes.insert(node_index) {
+
+                iter_count +=1;
+
                 let Some(working_node) = self.storage.get(&node_index) else {
                     panic!("working node should be active");
                 };
@@ -161,6 +166,8 @@ where
             }
         }
 
+        ic_cdk::println!("iter_count: {iter_count}");
+
         // You may want them strictly sorted by distance in the final output
         result.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         // Truncate to the `l` nearest
@@ -169,49 +176,62 @@ where
         result
     }
 
-    // Purne nodes in order to maintain edge diversity.
+    /// Prune nodes in order to maintain edge diversity.
     pub fn prune(&mut self, mut candidates: Vec<(Dist<f32>, u32)>, a: f32) -> [u32; R] {
-        // Edge list is saved as R length sized array.
-        let mut new_edge_nodes = [0; R]; // or u32::MAX
+        let mut new_edge_nodes = [0; R]; // or [u32::MAX; R]
 
+        // If you want to ensure we pick from the nearest to farthest:
+        candidates.sort_by(|(dist_a, _), (dist_b, _)| dist_a.partial_cmp(dist_b).unwrap());
+
+        // If candidates are already fewer than R, just fill and return.
         if candidates.len() <= R {
             for (i, (_, node_index)) in candidates.into_iter().enumerate() {
                 new_edge_nodes[i] = node_index;
             }
-        } else {
-            let mut edge_index = 0;
+            return new_edge_nodes;
+        }
 
-            debug!("prune: candidates.len(): {}", candidates.len());
+        let mut edge_count = 0;
+        let mut i = 0; // Current index of the candidate we're selecting
 
-            while let Some((first, rest)) = candidates.split_first() {
-                let (_, pa) = *first; // pa is p asterisk (p*), which is nearest point to p in this loop
-                new_edge_nodes[edge_index] = pa;
+        // We keep going while we haven't selected R edges and still have candidates.
+        while i < candidates.len() && edge_count < R {
+            // Take the candidate at position `i` (assumed "nearest" if sorted).
+            let (_, pa) = candidates[i];
+            new_edge_nodes[edge_count] = pa;
+            edge_count += 1;
 
-                candidates = rest.to_vec();
+            let pa_node = self.storage.get(&pa).expect("Expected an active node");
+            let pa_point = &pa_node.point;
 
-                // if α · d(p*, p') <= d(p, p') then remove p' from v
-                candidates.retain(|&(dist_xp_pd, pd)| {
-                    // let Some(Node::Active(pa_node)) = self.storage.get(&pa) else {
-                    //     panic!("")
-                    // };
-                    // let Some(Node::Active(pd_node)) = self.storage.get(&pd) else {
-                    //     panic!("")
-                    // };
-                    let pa_node = self.storage.get(&pa).expect("msg");
-                    let pd_node = self.storage.get(&pd).expect("msg");
-                    let dist_pa_pd = pa_node.point.distance(&pd_node.point);
+            // Now we remove from the *remaining* candidates any that fail:
+            //     α·d(p*, p') > d(p, p')
+            // We'll do it in-place using `swap_remove`.
+            let mut j = i + 1;
+            while j < candidates.len() {
+                let (dist_xp_pd, pd) = candidates[j];
+                let pd_node = self.storage.get(&pd).expect("Expected an active node");
+                let dist_pa_pd = pa_point.distance(&pd_node.point);
 
-                    a * dist_pa_pd > dist_xp_pd.0
-                });
-
-                edge_index += 1;
-                if edge_index == R {
-                    break;
+                // If this candidate *does not* meet the condition, we remove it.
+                if a * dist_pa_pd <= dist_xp_pd.0 {
+                    // Remove by swapping with the last element in O(1)
+                    candidates.swap_remove(j);
+                    // Don't advance j, because we need to check the swapped-in item.
+                } else {
+                    // It's good, keep it, move on
+                    j += 1;
                 }
             }
 
-            display_instruction_counter("purne");
+            // Move to the next candidate in the (now possibly shortened) list
+            i += 1;
         }
+
+        // If edge_count < R and we ran out of candidates, the rest remain 0 (or u32::MAX).
+        // Otherwise, we've filled `new_edge_nodes` with R pruned edges.
+
+        // display_instruction_counter("purne");
 
         new_edge_nodes
     }
@@ -219,9 +239,9 @@ where
     pub fn insert(&mut self, point: P, a: f32, l: usize, rng: &mut T) -> u32 {
         // Search the new point and use route nodes as candidates of its edges
         let candidates = self.search(&point, l, rng);
+        // display_instruction_counter("search");
         let edges = Self::prune(self, candidates, a);
-
-        display_instruction_counter("search");
+        display_instruction_counter("prune new edges");
 
         // Add new node to the storage
         let new_node_index = self.storage.alloc();

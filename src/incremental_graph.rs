@@ -3,9 +3,8 @@ use std::collections::BinaryHeap;
 
 use itertools::Itertools;
 use log::debug;
-use num_format::Locale;
-use num_format::ToFormattedString;
 use rand::Rng;
+use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 
 pub use crate::traits::GraphInterface;
@@ -61,7 +60,7 @@ where
 }
 
 pub trait StorageTrait<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> {
-    fn new() -> Self;
+    fn init() -> Self;
 
     fn get(&self, index: &u32) -> Option<Node<P, R, D>>;
 
@@ -96,20 +95,29 @@ where
     S: StorageTrait<P, R, D, T>,
     T: Rng,
 {
-    pub fn new(init_point: P) -> Self {
-        let mut storage = S::new();
-        let init_node = Node {
-            point: init_point,
-            edges: [0; R],
-            alive: true,
-        };
-        storage.set(0, init_node);
+
+    // If this already contains a Node 0, then that
+    // map is loaded. Otherwise, a new storage is created.
+    pub fn init(init_point: P) -> Self {
+        let mut storage = S::init();
+        match storage.get(&0) {
+            Some(_) => {},
+            None => {
+                let init_node = Node {
+                    point: init_point,
+                    edges: [0; R],
+                    alive: true,
+                };
+                storage.set(0, init_node);
+            },
+        }
         Self {
             storage,
             phantom1: std::marker::PhantomData,
             phantom2: std::marker::PhantomData,
         }
     }
+
     pub fn search(&self, query: &P, l: usize, rng: &mut T) -> Vec<(Dist<f32>, u32)> {
         let mut result = Vec::new();
         // “visited” tracks which nodes we have *finished* processing
@@ -124,6 +132,9 @@ where
         let (entry_node_index, entry_node) = self.storage.pick_random_active_node(rng);
         let entry_dist = Dist(entry_node.point.distance(query));
 
+        let mut cache = FxHashMap::default();
+        cache.insert(entry_node_index, entry_node);
+
         // Push the starting node onto the heap
         heap.push(Reverse((entry_dist, entry_node_index)));
         touched_nodes.insert(entry_node_index);
@@ -133,7 +144,7 @@ where
             // If we’ve never visited it before, process it
             if visited_nodes.insert(node_index) {
 
-                let Some(working_node) = self.storage.get(&node_index) else {
+                let Some(working_node): Option<&Node<P, R, D>>  = cache.get(&node_index) else {
                     panic!("working node should be active");
                 };
 
@@ -150,6 +161,7 @@ where
                             panic!("edge node should be active");
                         };
                         let edge_dist = Dist(edge_node.point().distance(query));
+                        cache.insert(edge_node_index, edge_node);
                         // Push neighbor into the heap
                         heap.push(Reverse((edge_dist, edge_node_index)));
                     }
@@ -223,11 +235,6 @@ where
             // Move to the next candidate in the (now possibly shortened) list
             i += 1;
         }
-
-        // If edge_count < R and we ran out of candidates, the rest remain 0 (or u32::MAX).
-        // Otherwise, we've filled `new_edge_nodes` with R pruned edges.
-
-        // display_instruction_counter("purne");
 
         new_edge_nodes
     }
@@ -352,12 +359,15 @@ where
     }
 }
 
-fn display_instruction_counter(name: &str) {
+fn display_instruction_counter(_name: &str) {
     #[cfg(target_arch = "wasm32")]
     {
+        use num_format::Locale;
+        use num_format::ToFormattedString;
+
         let counter = ic_cdk::api::instruction_counter();
         ic_cdk::println!(
-            "[Inst Counter] \"{name}\": {}",
+            "[Inst Counter] \"{_name}\": {}",
             counter.to_formatted_string(&Locale::en)
         );
     }
@@ -393,7 +403,7 @@ mod tests {
     }
 
     impl StorageTrait<Point<DIM>, R, DIM, SmallRng> for TestStorage {
-        fn new() -> Self {
+        fn init() -> Self {
             Self {
                 nodes: FxHashMap::default(),
                 index: 0,
@@ -484,7 +494,7 @@ mod tests {
     fn test_get() {
         let mut rng: SmallRng = SmallRng::from_entropy();
         let mut graph: Graph<Point<DIM>, TestStorage, R, DIM, SmallRng> =
-            Graph::new(gen_point(&mut rng));
+            Graph::init(gen_point(&mut rng));
 
         env_logger::init();
 
@@ -522,11 +532,11 @@ mod tests {
                     let result = graph.search(&p, L, rng);
 
                     // println!("{:?}, {:?}", ground_truth.split(6), result[0..6]);
-                    let g_list: Vec<_> = ground_truth[0..5]
+                    let _g_list: Vec<_> = ground_truth[0..5]
                         .into_iter()
                         .map(|(_, index)| index)
                         .collect();
-                    let r_list: Vec<_> = result[0..5].into_iter().map(|(_, index)| index).collect();
+                    let _r_list: Vec<_> = result[0..5].into_iter().map(|(_, index)| index).collect();
 
                     // for delete_index in 1..split_count {
                     //     assert!(!r_list.contains(delete_index));

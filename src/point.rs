@@ -4,7 +4,6 @@ use crate::PointInterface;
 pub struct Point(pub Vec<f32>);
 
 impl PointInterface for Point {
-
     fn new(embedding: Vec<f32>, size: usize) -> Self {
         assert_eq!(embedding.len(), size);
         Self(embedding)
@@ -39,7 +38,6 @@ impl PointInterface for Point {
     fn from_f32_vec(a: Vec<f32>) -> Self {
         Point(a.try_into().unwrap())
     }
-
 }
 
 fn dot_product(vec1: &Point, vec2: &Point) -> f32 {

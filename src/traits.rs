@@ -12,7 +12,6 @@
 pub trait PointInterface: Clone + Sync + Send {
     fn new(embedding: Vec<f32>, size: usize) -> Self;
 
-
     /// A function that returns the distance between two Points. Typically, the Euclidean distance is used.
     ///
     /// # Examples
@@ -72,7 +71,6 @@ pub trait PointInterface: Clone + Sync + Send {
 
     fn to_f32_vec(&self) -> Vec<f32>;
     fn from_f32_vec(a: Vec<f32>) -> Self;
-
 }
 
 /// Traits that should be implemented for searching, inserting, and deleting after indexing.

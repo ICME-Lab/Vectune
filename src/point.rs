@@ -1,9 +1,15 @@
 use crate::PointInterface;
 
 #[derive(Clone, Debug)]
-pub struct Point<const D: usize>(pub [f32; D]);
+pub struct Point(pub Vec<f32>);
 
-impl<const D: usize> PointInterface<D> for Point<D> {
+impl PointInterface for Point {
+
+    fn new(embedding: Vec<f32>, size: usize) -> Self {
+        assert_eq!(embedding.len(), size);
+        Self(embedding)
+    }
+
     fn distance(&self, other: &Self) -> f32 {
         -cosine_similarity(&self, &other) + 1.0
     }
@@ -29,16 +35,14 @@ impl<const D: usize> PointInterface<D> for Point<D> {
     fn to_f32_vec(&self) -> Vec<f32> {
         self.0.iter().copied().collect()
     }
+
     fn from_f32_vec(a: Vec<f32>) -> Self {
         Point(a.try_into().unwrap())
     }
 
-    fn raw(&self) -> [f32; D] {
-        self.0.clone()
-    }
 }
 
-fn dot_product<const D: usize>(vec1: &Point<D>, vec2: &Point<D>) -> f32 {
+fn dot_product(vec1: &Point, vec2: &Point) -> f32 {
     assert_eq!(vec1.0.len(), vec2.0.len());
     let dim: usize = vec1.0.len();
     let mut result = 0.0;
@@ -48,7 +52,7 @@ fn dot_product<const D: usize>(vec1: &Point<D>, vec2: &Point<D>) -> f32 {
     result
 }
 
-fn norm<const D: usize>(vec: &Point<D>) -> f32 {
+fn norm(vec: &Point) -> f32 {
     let dim = vec.0.len();
     let mut result = 0.0;
     for i in 0..dim {
@@ -57,7 +61,7 @@ fn norm<const D: usize>(vec: &Point<D>) -> f32 {
     result.sqrt()
 }
 
-fn cosine_similarity<const D: usize>(vec1: &Point<D>, vec2: &Point<D>) -> f32 {
+fn cosine_similarity(vec1: &Point, vec2: &Point) -> f32 {
     let dot = dot_product(vec1, vec2);
     let norm1 = norm(vec1);
     let norm2 = norm(vec2);

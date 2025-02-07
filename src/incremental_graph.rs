@@ -23,21 +23,19 @@ impl<T: PartialOrd> Ord for Dist<T> {
 }
 
 #[derive(Clone)]
-pub struct Node<P: PointInterface<D>, const R: usize, const D: usize> {
+pub struct Node<P: PointInterface, const R: usize> {
     pub point: P,
     pub edges: [u32; R],
-    pub alive: bool,
 }
 
-impl<P, const R: usize, const D: usize> Node<P, R, D>
+impl<P, const R: usize> Node<P, R>
 where
-    P: PointInterface<D>,
+    P: PointInterface,
 {
     pub fn new(point: P, edges: [u32; R]) -> Self {
         Self {
             point,
             edges,
-            alive: true,
         }
     }
 
@@ -53,33 +51,32 @@ where
     pub fn raw_edges(&self) -> [u32; R] {
         self.edges
     }
-
-    pub fn mark_as_deleted(&mut self) {
-        self.alive = false;
-    }
 }
 
-pub trait StorageTrait<P: PointInterface<D>, const R: usize, const D: usize, T: Rng> {
+pub trait StorageTrait<P: PointInterface, const R: usize, T: Rng> {
     fn init() -> Self;
 
-    fn get(&self, index: &u32) -> Option<Node<P, R, D>>;
+    fn get(&self, index: &u32) -> Option<Node<P, R>>;
 
-    fn set(&mut self, index: u32, node: Node<P, R, D>) -> Option<Node<P, R, D>>;
+    fn set(&mut self, index: u32, node: Node<P, R>) -> Option<Node<P, R>>;
 
     fn delete(&mut self, index: u32);
 
+    fn remove(&mut self, index: u32);
+
+    fn removed_indices(&self) -> Vec<u32>;
+
     fn alloc(&mut self) -> u32;
 
-    fn pick_random_active_node(&self, rng: &mut T) -> (u32, Node<P, R, D>);
+    fn pick_random_active_node(&self, rng: &mut T) -> (u32, Node<P, R>);
 
     fn backlink(&self, index: u32) -> Vec<u32>;
 }
 
 pub struct Graph<
-    P: PointInterface<D>,
-    S: StorageTrait<P, R, D, T>,
+    P: PointInterface,
+    S: StorageTrait<P, R, T>,
     const R: usize,
-    const D: usize,
     T,
 > where
     T: Rng,
@@ -89,10 +86,10 @@ pub struct Graph<
     phantom2: std::marker::PhantomData<T>,
 }
 
-impl<P, S, const R: usize, const D: usize, T> Graph<P, S, R, D, T>
+impl<P, S, const R: usize, T> Graph<P, S, R, T>
 where
-    P: PointInterface<D>,
-    S: StorageTrait<P, R, D, T>,
+    P: PointInterface,
+    S: StorageTrait<P, R, T>,
     T: Rng,
 {
 
@@ -106,7 +103,6 @@ where
                 let init_node = Node {
                     point: init_point,
                     edges: [0; R],
-                    alive: true,
                 };
                 storage.set(0, init_node);
             },
@@ -128,6 +124,9 @@ where
         // A min-heap is emulated by using Reverse(...) in Rust's max-heap
         let mut heap = BinaryHeap::new();
 
+        // removed removed_indices
+        let removed_indices = self.storage.removed_indices();
+
         // Pick a random active node
         let (entry_node_index, entry_node) = self.storage.pick_random_active_node(rng);
         let entry_dist = Dist(entry_node.point.distance(query));
@@ -144,12 +143,12 @@ where
             // If we’ve never visited it before, process it
             if visited_nodes.insert(node_index) {
 
-                let Some(working_node): Option<&Node<P, R, D>>  = cache.get(&node_index) else {
+                let Some(working_node): Option<&Node<P, R>>  = cache.get(&node_index) else {
                     panic!("working node should be active");
                 };
 
                 // If the node is alive, add it to our result set
-                if working_node.alive {
+                if !removed_indices.contains(&node_index) {
                     result.push((dist, node_index));
                 }
 
@@ -253,7 +252,6 @@ where
             Node {
                 point,
                 edges,
-                alive: true,
             },
         );
 
@@ -277,29 +275,17 @@ where
         new_node_index
     }
 
-    pub fn delete(&mut self, index: u32, _a: f32) {
-        /*
-        方針:
-        vamanaのdelete algorithと同等の効果があるローカルノードの置き換えをオンデマンドで行う。
-        削除されたnode-pをedgeに持つnodeは、node-pのedgeを追加の候補としてits edgeに追加する。
-        これを検索時に行うことで、同等の効果が得られるはずだ。
-
-        vamanaの性能を保持したまま、検索時の計算コストの増加だけ済む。
-        さらに、このコストは逐次的にrobust-pruneをかけていく事で減らすことができるので、backlinksを保存することが難しい場合には向いている。
-        また、挿入の実装も小さくすることができる。
-
-        削除したノードのエッジのindexをとっておく必要がある。
-        */
-
-        self.storage.delete(index);
-    }
-
-    pub fn remove(&mut self, _index: u32, _a: f32) {
+    pub fn delete(&mut self, _index: u32, _a: f32) {
+        // self.storage.delete(index);
         todo!()
     }
 
-    pub fn remove_list(&self) -> Vec<u32> {
-        todo!()
+    pub fn remove(&mut self, index: u32, _a: f32) {
+        self.storage.remove(index);
+    }
+
+    pub fn removed_indices(&self) -> Vec<u32> {
+        self.storage.removed_indices()
     }
 
     // Add a new edge node to the node.
@@ -353,7 +339,6 @@ where
             Node {
                 point: target_node.point(),
                 edges: new_edges,
-                alive: true,
             },
         );
     }
@@ -381,7 +366,7 @@ mod tests {
     use itertools::Itertools;
     use rand::SeedableRng;
     use rand::{rngs::SmallRng, seq::SliceRandom};
-    use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+    use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
     use rustc_hash::{FxHashMap, FxHashSet};
 
     const R: usize = 20;
@@ -397,29 +382,31 @@ mod tests {
     }
 
     struct TestStorage {
-        nodes: FxHashMap<u32, Node<Point<DIM>, R, DIM>>,
+        nodes: FxHashMap<u32, Node<Point, R>>,
         backlinks: FxHashMap<u32, FxHashSet<u32>>,
         index: u32,
+        removed_indices: Vec<u32>
     }
 
-    impl StorageTrait<Point<DIM>, R, DIM, SmallRng> for TestStorage {
+    impl StorageTrait<Point, R, SmallRng> for TestStorage {
         fn init() -> Self {
             Self {
                 nodes: FxHashMap::default(),
                 index: 0,
                 backlinks: FxHashMap::default(),
+                removed_indices: Vec::new()
             }
         }
 
-        fn get(&self, index: &u32) -> Option<Node<Point<DIM>, R, DIM>> {
+        fn get(&self, index: &u32) -> Option<Node<Point, R>> {
             self.nodes.get(index).cloned()
         }
 
         fn set(
             &mut self,
             index: u32,
-            active_node: Node<Point<DIM>, R, DIM>,
-        ) -> Option<Node<Point<DIM>, R, DIM>> {
+            active_node: Node<Point, R>,
+        ) -> Option<Node<Point, R>> {
             // Set rc of this node
             match self.backlinks.get(&index) {
                 Some(_) => {}
@@ -454,12 +441,20 @@ mod tests {
         }
 
         fn delete(&mut self, index: u32) {
-            let Some(node) = self.nodes.get_mut(&index) else {
+            let Some(_node) = self.nodes.get_mut(&index) else {
                 return;
             };
 
-            // Mark the node as "deleted"
-            node.mark_as_deleted();
+            todo!()
+
+        }
+
+        fn remove(&mut self, index: u32) {
+            self.removed_indices.push(index);
+        }
+
+        fn  removed_indices(&self) -> Vec<u32> {
+            self.removed_indices.clone()
         }
 
         fn alloc(&mut self) -> u32 {
@@ -467,7 +462,7 @@ mod tests {
             self.index
         }
 
-        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, Node<Point<DIM>, R, DIM>) {
+        fn pick_random_active_node(&self, rng: &mut SmallRng) -> (u32, Node<Point, R>) {
             let keys: Vec<_> = self.nodes.keys().collect();
 
             loop {
@@ -493,7 +488,7 @@ mod tests {
     #[test]
     fn test_get() {
         let mut rng: SmallRng = SmallRng::from_entropy();
-        let mut graph: Graph<Point<DIM>, TestStorage, R, DIM, SmallRng> =
+        let mut graph: Graph<Point, TestStorage, R, SmallRng> =
             Graph::init(gen_point(&mut rng));
 
         env_logger::init();
@@ -501,22 +496,26 @@ mod tests {
         let iter_count = 500;
         let split_count = 0;
 
-        let mut test_points: Vec<(u32, Point<DIM>)> = (0..iter_count)
+        // Generate random poins
+        let mut test_points: Vec<(u32, Point)> = (0..iter_count)
             .into_iter()
             .map(|i| (i + 1, gen_point(&mut rng)))
             .collect();
 
+        // Insert them into Vectune
         for (index, p) in test_points.iter() {
             let new_index = graph.insert(p.clone(), 2.0, L, &mut rng);
             assert_eq!(*index, new_index);
         }
 
+        // Remove some indices
         test_points.shuffle(&mut rng);
-
         for (i, _) in test_points[0..split_count].to_vec() {
             graph.delete(i, 2.0);
         }
 
+
+        // Recall rate
         let hit_counts: f32 = test_points[split_count as usize..]
             .par_iter()
             .map_init(
@@ -538,11 +537,6 @@ mod tests {
                         .collect();
                     let _r_list: Vec<_> = result[0..5].into_iter().map(|(_, index)| index).collect();
 
-                    // for delete_index in 1..split_count {
-                    //     assert!(!r_list.contains(delete_index));
-                    // }
-                    // println!("{:?}, {:?}",g_list, r_list);
-
                     let set1: FxHashSet<_> = ground_truth[0..5]
                         .into_iter()
                         .map(|(_, index)| index)
@@ -560,10 +554,59 @@ mod tests {
         println!("{:?}", hit_counts / ((5 * iter_count) as f32));
     }
 
-    fn gen_point(rng: &mut SmallRng) -> Point<DIM> {
+
+    #[test]
+    fn test_remove() {
+        let mut rng: SmallRng = SmallRng::from_entropy();
+        let mut graph: Graph<Point, TestStorage, R, SmallRng> =
+            Graph::init(gen_point(&mut rng));
+
+        env_logger::init();
+
+        let iter_count = 100;
+
+        // Generate random poins
+        let mut test_points: Vec<(u32, Point)> = (0..iter_count)
+            .into_iter()
+            .map(|i| (i + 1, gen_point(&mut rng)))
+            .collect();
+
+        // Insert them into Vectune
+        for (index, p) in test_points.iter() {
+            let new_index = graph.insert(p.clone(), 2.0, L, &mut rng);
+            assert_eq!(*index, new_index);
+        }
+
+        // Remove some indices
+        test_points.shuffle(&mut rng);
+        let removed_indices: Vec<u32> = test_points[0..10].to_vec().into_iter().map(|(i, _)| {
+            graph.remove(i, 2.0);
+            i
+        }).collect();
+
+        // Assert graph.removed_indieces equals to the removed_indices
+        let graph_removed_indices = graph.removed_indices();
+        assert_eq!(graph_removed_indices.len(), removed_indices.len());
+        graph_removed_indices.into_par_iter().for_each(|i| {
+            assert!(removed_indices.contains(&i))
+        });
+
+        // Assert result does not include removed indices
+        test_points
+            .par_iter()
+            .for_each_init(
+                || SmallRng::from_entropy(),
+                |rng, (_, p)| {
+                    let result = graph.search(p, L, rng);
+                    result.into_iter().for_each(|(_, i)| assert!(!removed_indices.contains(&i)));
+                },
+            );
+    }
+
+    fn gen_point(rng: &mut SmallRng) -> Point {
         let new_point: Vec<f32> = (0..DIM).map(|_| rng.gen_range(-1000.0..1000.0)).collect();
         let new_point = normalize_to_unit_length(new_point);
-        Point(new_point.try_into().unwrap())
+        Point::new(new_point.try_into().unwrap(), DIM)
     }
 
     #[test]

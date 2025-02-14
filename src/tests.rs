@@ -1,5 +1,4 @@
 use super::{GraphInterface as VGraph, PointInterface as VPoint, *};
-use bit_vec::BitVec;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
@@ -23,9 +22,6 @@ impl VPoint for Point {
             .sum::<f32>()
             .sqrt()
     }
-    // fn dim() -> u32 {
-    //     12
-    // }
 
     fn add(&self, other: &Self) -> Self {
         Point::from_f32_vec(
@@ -45,16 +41,13 @@ impl VPoint for Point {
         )
     }
 
-    // fn zero() -> Self {
-    //     Point::from_f32_vec(vec![0.0; Point::dim() as usize])
-    // }
-
     fn from_f32_vec(a: Vec<f32>) -> Self {
-        todo!()
+        let p: Vec<u32> = a.into_iter().map(|p| p as u32).collect();
+        Self(p)
     }
 
     fn to_f32_vec(&self) -> Vec<f32> {
-        todo!()
+        self.0.clone().into_iter().map(|p| p as f32).collect()
     }
 }
 
@@ -132,7 +125,7 @@ where
     }
 }
 
-fn gen_backlinks(nodes: &Vec<(Point, Vec<u32>)>) -> Vec<Vec<u32>> {
+fn _gen_backlinks(nodes: &Vec<(Point, Vec<u32>)>) -> Vec<Vec<u32>> {
     let backlinks: Vec<Vec<u32>> = nodes
         .iter()
         .enumerate()
@@ -154,116 +147,6 @@ fn gen_backlinks(nodes: &Vec<(Point, Vec<u32>)>) -> Vec<Vec<u32>> {
         })
         .collect();
     backlinks
-}
-
-#[test]
-fn test_parallel_gorder() {
-    let builder = Builder::default();
-    // let builder = Builder::default().set_seed(10910418820652569485);
-    let mut rng = SmallRng::seed_from_u64(builder.get_seed());
-
-    println!("seed: {}", builder.get_seed());
-
-    let mut i = 0;
-
-    const DIM: usize = 96;
-
-    let points: Vec<Point> = (0..105)
-        .map(|_| {
-            let a = i;
-            i += 1;
-            Point(vec![a; DIM as usize])
-        })
-        .collect();
-
-    let (nodes, centroid, _) = builder.build(points);
-
-    // for (node_i, node) in nodes.iter().enumerate() {
-    //     println!("id: {}, {:?}", node_i, node.1);
-    // }
-
-    let backlinks: Vec<Vec<u32>> = gen_backlinks(&nodes);
-
-    let mut original_graph = Graph {
-        nodes: nodes.clone(),
-        backlinks: backlinks.clone(),
-        cemetery: Vec::new(),
-        centroid,
-    };
-
-    // let ordered_nodes = super::gorder(
-    //     nodes.iter().map(|(_, outs)| outs.clone()).collect(),
-    //     backlinks,
-    //     BitVec::from_elem(nodes.len(), false),
-    //     10,
-    // );
-    let get_edges = |id: &u32| -> Vec<u32> { nodes[*id as usize].1.clone() };
-    let get_backlinks = |id: &u32| -> Vec<u32> { backlinks[*id as usize].clone() };
-    let ordered_nodes: Vec<u32> = super::gorder(
-        get_edges,
-        get_backlinks,
-        BitVec::from_elem(nodes.len(), true),
-        10,
-        &mut rng,
-        #[cfg(feature = "progress-bar")]
-        None,
-    )
-    .into_iter()
-    .flatten()
-    .collect();
-
-    println!("ordered_nodes: {:?}\n", ordered_nodes.iter().sorted());
-
-    assert_eq!(nodes.len(), ordered_nodes.len());
-
-    // Create a conversion table from ordered_nodes to original_index->ordered_index.
-    let ordered_table: Vec<u32> = ordered_nodes
-        .iter()
-        .enumerate()
-        .map(|(ordered_index, original_index)| (original_index, ordered_index as u32))
-        .sorted()
-        .map(|(_, ordered_index)| ordered_index)
-        .collect();
-    // Replace all, including P
-    let nodes: Vec<(Point, Vec<u32>)> = ordered_nodes
-        .into_iter()
-        .map(|original_index| {
-            let (p, outs) = nodes[original_index as usize].clone();
-            let outs: Vec<u32> = outs
-                .into_iter()
-                .map(|original_index| ordered_table[original_index as usize])
-                .collect();
-            (p, outs)
-        })
-        .collect();
-
-    let centroid = ordered_table[centroid as usize];
-
-    let backlinks: Vec<Vec<u32>> = gen_backlinks(&nodes);
-
-    for (node_i, node) in nodes.iter().enumerate() {
-        println!("id: {}, {:?}", node_i, node.1);
-    }
-
-    let mut graph = Graph {
-        nodes,
-        backlinks,
-        cemetery: Vec::new(),
-        centroid,
-    };
-
-    let xq = Point(vec![0; DIM as usize]);
-    let k = 10;
-    // let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
-    let (k_anns, _visited) = super::search(&mut graph, &xq, k);
-
-    let expected_k_anns = super::search(&mut original_graph, &xq, k).0;
-
-    println!("k_anns:\t\t{:?}\noriginal:\t{:?}", k_anns, expected_k_anns);
-
-    for i in 0..10 {
-        assert_eq!(k_anns[i].0, expected_k_anns[i].0);
-    }
 }
 
 #[test]
@@ -313,7 +196,7 @@ fn test_vamana_build() {
         .collect();
 
     let ann: Vamana<Point> = Vamana::new(points, builder);
-    let xq = Point(vec![0;DIM as usize]);
+    let xq = Point(vec![0; DIM as usize]);
     let k = 20;
     let (k_anns, _visited) = ann.greedy_search(&xq, k, l);
 

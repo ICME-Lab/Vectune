@@ -10,6 +10,8 @@
 /// }
 /// ```
 pub trait PointInterface: Clone + Sync + Send {
+    fn new(embedding: Vec<f32>, size: usize) -> Self;
+
     /// A function that returns the distance between two Points. Typically, the Euclidean distance is used.
     ///
     /// # Examples
@@ -164,7 +166,6 @@ pub trait GraphInterface<P> {
     fn start_id(&self) -> u32;
     fn overwirte_out_edges(&mut self, id: &u32, edges: Vec<u32>); // backlinkを処理する必要がある。
 }
-
 
 // pub trait PointHelper {
 //     fn to_f32_vec(&self) -> Vec<f32>;

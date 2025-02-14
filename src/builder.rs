@@ -149,16 +149,10 @@ where
                                                             // bar.set_message("");
         }
 
-        // let _start_time = Instant::now();
         let mut ann = Vamana::<P>::random_graph_init(points, builder, &mut rng);
 
         // Prune Edges
         Vamana::<P>::indexing(&mut ann, &mut rng);
-
-        // println!(
-        //     "\ntotal indexing time: {:?}",
-        //     Instant::now().duration_since(start_time)
-        // );
 
         ann
     }
@@ -186,30 +180,18 @@ where
         if let Some((bar, _done)) = &builder.progress {
             bar.set_message("finding a medoid");
         }
-        // let mut sum = points[0].clone();
-        // for p in &points[1..] {
-        //     sum = sum.add(p);
-        // }
-        // let sum = points.par_iter().reduce_with(|acc, x| &acc.add(x)).unwrap();
-
         let point_dim = points[0].to_f32_vec().len();
         let sum = points
             .par_iter()
-            .fold(|| P::from_f32_vec(vec![0.0; point_dim]), |acc, x| acc.add(x))
+            .fold(
+                || P::from_f32_vec(vec![0.0; point_dim]),
+                |acc, x| acc.add(x),
+            )
             .reduce_with(|sum1, sum2| sum1.add(&sum2))
             .unwrap();
 
         let average_point = sum.div(&points_len);
-        // let mut min_dist = f32::MAX;
-        // let mut centroid = u32::MAX;
-        // for (i, p) in points.iter().enumerate() {
-        //     let dist = p.distance(&average_point);
-        //     if dist < min_dist {
-        //         min_dist = dist;
-        //         centroid = i as u32;
-        //     }
-        // }
-        // println!("finding medoid");
+
         let centroid = points
             .par_iter()
             .enumerate()
@@ -220,8 +202,6 @@ where
 
         /* Get random connected graph */
 
-        // edge (in, out)
-        // println!("init empty edges");
         let edges: Vec<(RwLock<u32>, RwLock<Vec<(f32, u32)>>)> = (0..points_len)
             .into_par_iter()
             .map(|_| {
@@ -231,18 +211,6 @@ where
                 )
             })
             .collect();
-
-        // println!("connecting nodes randomly");
-
-        // #[cfg(feature = "progress-bar")]
-        // let progress = Some(ProgressBar::new(1000));
-        // #[cfg(feature = "progress-bar")]
-        // let progress_done = AtomicUsize::new(0);
-        // #[cfg(feature = "progress-bar")]
-        // if let Some((bar, _done)) = &mut builder.progress {
-        //     bar.set_length(points_len as u64);
-        //     bar.set_message("");
-        // }
 
         let mut shuffle_ids: Vec<u32> = (0..points_len as u32).collect();
         shuffle_ids.shuffle(rng);
@@ -259,21 +227,17 @@ where
 
             let mut new_ids = Vec::with_capacity(builder.r);
             let mut shuffle_iter_count = rng.gen_range(0..(points_len * 5) as u32);
-            while new_ids.len() < std::cmp::min(builder.r, points_len - 1) { // subtract node_i from points_len
-                // println!("new_ids len: {}", new_ids.len());
+            while new_ids.len() < std::cmp::min(builder.r, points_len - 1) {
+                // subtract node_i from points_len
                 shuffle_iter_count += 1;
                 let candidate_i = shuffle_ids[(shuffle_iter_count as usize) % points_len];
 
                 if node_i as u32 == candidate_i || new_ids.contains(&candidate_i) {
-                    // println!("node_i as u32 == candidate_i || new_ids.contains(&candidate_i)");
-                    // println!("{}, {}", points_len, new_ids.len());
                     continue;
                 }
 
                 if let Some(mut n_in_count) = edges[candidate_i as usize].0.try_write() {
                     if *n_in_count >= (builder.r + builder.r / 3) as u32 {
-                        // println!("d3: {}, {}", candidate_i, *n_in_count);
-                        // println!("*n_in_count >= (builder.r + builder.r / 3) as u32");
                         continue;
                     } else {
                         *n_in_count += 1;
@@ -281,21 +245,8 @@ where
                         shuffle_iter_count = rng.gen_range(0..points_len as u32);
                     }
                 } else {
-                    // println!("else");
                     continue;
                 }
-
-                // let candidate_i = rng.gen_range(0..points_len as u32);
-
-                // if node_i as u32 == candidate_i
-                //     || new_ids.contains(&candidate_i)
-                //     || *edges[candidate_i as usize].0.read() >= (builder.r + builder.r / 2) as u32
-                // {
-                //     continue;
-                // } else {
-                //     *edges[candidate_i as usize].0.write() += 1;
-                //     new_ids.push(candidate_i);
-                // }
             }
 
             let new_n_out: Vec<(f32, u32)> = new_ids
@@ -315,55 +266,7 @@ where
                     bar.set_position(value as u64);
                 }
             }
-
-            // let mut n_out = edges[node_i].1.write();
-            // *n_out = new_ids;
         });
-
-        // (0..points_len).into_par_iter().for_each(|node_i| {
-        //     let mut rng = SmallRng::seed_from_u64(builder.seed + node_i as u64);
-
-        //     let mut new_ids = Vec::with_capacity(builder.r);
-        //     while new_ids.len() < builder.r {
-        //         let candidate_i = rng.gen_range(0..points_len as u32);
-        //         if node_i as u32 == candidate_i
-        //             || new_ids.contains(&candidate_i)
-        //             || *edges[candidate_i as usize].0.read() >= (builder.r + builder.r / 2) as u32
-        //         {
-        //             continue;
-        //         } else {
-        //             *edges[candidate_i as usize].0.write() += 1;
-        //             new_ids.push(candidate_i);
-        //         }
-        //     }
-
-        //     let new_n_out: Vec<(f32, u32)> = new_ids
-        //         .into_par_iter()
-        //         .map(|edge_i| {
-        //             let dist = points[edge_i as usize].distance(&points[node_i]);
-        //             (dist, edge_i)
-        //         })
-        //         .collect();
-
-        //     *edges[node_i].1.write() = new_n_out;
-
-        //     // let mut n_out = edges[node_i].1.write();
-        //     // *n_out = new_ids;
-        // });
-
-        // println!("make nodes");
-        // println!("zipping point and edges");
-        // let nodes: Vec<Node<P>> = points
-        //     .into_par_iter()
-        //     .zip(edges.into_par_iter())
-        //     .map(|(p, (_n_in, n_out, nn))| {
-        //         Node {
-        //             n_out,
-        //             p,
-        //             nn,
-        //         }
-        //     })
-        //     .collect();
 
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &builder.progress {
@@ -388,27 +291,6 @@ where
                 }
             })
             .collect();
-
-        // let nodes: Vec<Node<&P>> = edges
-        //     .into_par_iter()
-        //     .zip(points.par_iter())
-        //     .map(|((_n_in, n_out, nn), p)| {
-        //         let n_out: Vec<(f32, u32)> = n_out
-        //             .read()
-        //             .clone()
-        //             .into_iter()
-        //             .map(|edge_i| {
-        //                 let dist = points[edge_i as usize].distance(&p);
-        //                 (dist, edge_i)
-        //             })
-        //             .collect();
-        //         Node {
-        //             n_out: RwLock::new(n_out),
-        //             p,
-        //             nn,
-        //         }
-        //     })
-        //     .collect();
 
         Self {
             nodes,
@@ -439,41 +321,6 @@ where
             .enumerate()
             .filter_map(|(index, is_true)| if !is_true { Some(index as u32) } else { None })
             .collect()
-
-        // let node_has_backlinks: Vec<(u32, Vec<u32>)> = ann
-        //     .nodes
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(i, node)| {
-        //         let i = i as u32;
-        //         node.n_out
-        //             .read()
-        //             .clone()
-        //             .into_iter()
-        //             .map(move |(_, out_i)| (out_i, i))
-        //     })
-        //     .flatten()
-        //     .sorted()
-        //     .group_by(|&(key, _)| key)
-        //     .into_iter()
-        //     .map(|(key, group)| (key, group.map(|(_, edge)| edge).collect()))
-        //     .collect();
-        // // let set: HashSet<u32> = node_has_backlinks.iter().map(|(key, _)| *key).collect();
-        // let mut set = BitVec::from_elem(ann.nodes.len(), false);
-        // for key in node_has_backlinks.iter().map(|(key, _)| *key) {
-        //     set.set(key as usize, true)
-        // }
-        // // let missings: Vec<u32> = (0..ann.nodes.len() as u32)
-        // //     .filter(|num| !set.contains(num))
-        // //     .collect();
-        // let missings: Vec<u32> = set
-        //     .into_iter()
-        //     .enumerate()
-        //     .filter_map(|(index, is_true)| if !is_true { Some(index as u32) } else { None })
-        //     .collect();
-        // // println!("missings, {:?}", missings);
-
-        // missings
     }
 
     fn get_backlinks(ann: &Vamana<P>) -> Vec<Vec<u32>> {
@@ -507,61 +354,7 @@ where
             .collect()
     }
 
-    // fn get_backlinks(ann: &Vamana<P>) -> (Vec<u32>, Vec<Vec<u32>>) {
-    //     // Backlinks
-    //     let node_has_backlinks: Vec<(u32, Vec<u32>)> = ann
-    //         .nodes
-    //         .iter()
-    //         .enumerate()
-    //         .map(|(i, node)| {
-    //             let i = i as u32;
-    //             node.n_out
-    //                 .read()
-    //                 .clone()
-    //                 .into_iter()
-    //                 .map(move |(_, out_i)| (out_i, i))
-    //         })
-    //         .flatten()
-    //         .sorted()
-    //         .group_by(|&(key, _)| key)
-    //         .into_iter()
-    //         .map(|(key, group)| (key, group.map(|(_, edge)| edge).collect()))
-    //         .collect();
-    //     // let set: HashSet<u32> = node_has_backlinks.iter().map(|(key, _)| *key).collect();
-    //     let mut set = BitVec::from_elem(ann.nodes.len(), false);
-    //     for key in node_has_backlinks.iter().map(|(key, _)| *key) {
-    //         set.set(key as usize, true)
-    //     }
-    //     // let missings: Vec<u32> = (0..ann.nodes.len() as u32)
-    //     //     .filter(|num| !set.contains(num))
-    //     //     .collect();
-    //     let missings: Vec<u32> = set
-    //         .into_iter()
-    //         .enumerate()
-    //         .filter_map(|(index, is_true)| if !is_true { Some(index as u32) } else { None })
-    //         .collect();
-    //     // println!("missings, {:?}", missings);
-
-    //     (
-    //         missings,
-    //         node_has_backlinks
-    //             .into_iter()
-    //             .map(|(_, edges)| edges)
-    //             .collect(),
-    //     )
-    // }
-
     pub fn indexing(ann: &mut Vamana<P>, rng: &mut SmallRng) {
-        // #[cfg(feature = "progress-bar")]
-        // let progress = &ann.builder.progress;
-        // #[cfg(feature = "progress-bar")]
-        // let progress_done = AtomicUsize::new(0);
-        // #[cfg(feature = "progress-bar")]
-        // if let Some((bar, _done)) = &ann.builder.progress {
-        //     bar.set_length((ann.nodes.len() * 2) as u64);
-        //     bar.set_message("Build index (preparation)");
-        // }
-
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &ann.builder.progress {
             bar.set_message("visiting all nodes");
@@ -641,19 +434,9 @@ where
                     let is_same = ann.nodes[node_i].nn.read().clone() == nn.1;
                     *ann.nodes[node_i].nn.write() = nn.1;
 
-                    // insert_dist((nn.0, node_i as u32), &mut ann.nodes[nn.1 as usize].n_out.write());
-
                     let mut current_n_out = ann.nodes[nn.1 as usize].n_out.write();
                     insert_dist((nn.0, node_i as u32), &mut current_n_out);
                     sort_list_by_dist_v1(&mut current_n_out);
-
-                    // #[cfg(feature = "progress-bar")]
-                    // if let Some(bar) = &progress {
-                    //     let value = progress_done.fetch_add(1, atomic::Ordering::Relaxed);
-                    //     if value % 1000 == 0 {
-                    //         bar.set_position(value as u64);
-                    //     }
-                    // }
 
                     is_same
                 })
@@ -665,20 +448,14 @@ where
             }
         }
 
-        // Vamana::<P>::no_backlinks_nodes(&ann);
-
         #[cfg(feature = "progress-bar")]
         if let Some((bar, _done)) = &ann.builder.progress {
             bar.set_message("pruning extra edges");
         }
 
         (0..node_len).into_par_iter().for_each(|node_i| {
-            // println!("debug1");
             let mut n_out = ann.nodes[node_i].n_out.write();
 
-            // let original_n_out_len = n_out.len();
-
-            // sort_list_by_dist_v1(&mut n_out_dist);
             let mut candidates = n_out.clone();
             *n_out = ann.prune_v2(&mut candidates, vec![]);
 

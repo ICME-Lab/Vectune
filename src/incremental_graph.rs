@@ -1,5 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::future::Future;
 
 use itertools::Itertools;
 use log::debug;
@@ -89,13 +90,13 @@ where
 {
     // If this already contains a Node 0, then that
     // map is loaded. Otherwise, a new storage is created.
-    pub fn init(init_point: P) -> Self {
+    pub fn init(dim: usize) -> Self {
         let mut storage = S::init();
         match storage.get(&0) {
             Some(_) => {}
             None => {
                 let init_node = Node {
-                    point: init_point,
+                    point: P::from_f32_vec(vec![0.0; dim]),
                     edges: [0; R],
                 };
                 storage.set(0, init_node);
@@ -268,7 +269,11 @@ where
         new_node_index
     }
 
-    pub fn delete(&mut self, a: f32) -> Vec<u32> {
+    pub async fn delete<F, Fut>(&mut self, a: f32, commit: F) -> Vec<u32>
+        where
+            F: Fn() -> Fut,
+            Fut: Future<Output = ()>,
+    {
         let removed_indices: Vec<u32> = self
             .storage
             .clear_removed_indices()
@@ -331,6 +336,8 @@ where
                 edges: new_edges,
                 point: p_node.point(),
             });
+
+            commit().await;
         }
 
         // Delete
@@ -341,7 +348,7 @@ where
         removed_indices
     }
 
-    pub fn remove(&mut self, index: u32, _a: f32) {
+    pub fn remove(&mut self, index: u32) {
         self.storage.remove(index);
     }
 
@@ -550,7 +557,7 @@ mod tests {
     #[test]
     fn test_get() {
         let mut rng: SmallRng = SmallRng::from_entropy();
-        let mut graph: Graph<Point, TestStorage, R, SmallRng> = Graph::init(gen_point(&mut rng));
+        let mut graph: Graph<Point, TestStorage, R, SmallRng> = Graph::init(DIM);
 
         env_logger::init();
 
@@ -612,7 +619,7 @@ mod tests {
     #[test]
     fn test_remove() {
         let mut rng: SmallRng = SmallRng::from_entropy();
-        let mut graph: Graph<Point, TestStorage, R, SmallRng> = Graph::init(gen_point(&mut rng));
+        let mut graph: Graph<Point, TestStorage, R, SmallRng> = Graph::init(DIM);
 
         env_logger::init();
 
@@ -636,7 +643,7 @@ mod tests {
             .to_vec()
             .into_iter()
             .map(|(i, _)| {
-                graph.remove(i, 2.0);
+                graph.remove(i);
                 i
             })
             .collect();
